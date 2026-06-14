@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@theme {
+  /* Cores Globais do App */
+  --color-brand: #f59e0b;        /* O laranja/ambar principal (amber-500) */
+  --color-brand-hover: #fbbf24;  /* Laranja mais claro para o hover */
+  
+  --color-background: #f8fafc;   /* Fundo geral da página (slate-50) */
+  --color-surface: #ffffff;      /* Fundo de cartões e painéis (white) */
+  
+  --color-text-base: #0f172a;    /* Texto principal escuro (slate-900) */
+  --color-text-muted: #64748b;   /* Texto secundário/cinza (slate-500) */
+  
+  --color-border-line: #e2e8f0;  /* Bordas sutis (slate-200) */
+}
+
+/* Garante que o fundo do app sempre respeite a variável base */
+body {
+  background-color: var(--color-background);
+  color: var(--color-text-base);
+}
