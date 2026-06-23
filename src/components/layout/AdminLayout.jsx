@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { 
   Scissors, LogOut, LayoutDashboard, Users, 
-  Box, ShieldCheck, Building2, Home 
+  Box, ShieldCheck, Building2, Home, DollarSign 
 } from 'lucide-react';
 
 export default function AdminLayout({ children }) {
@@ -18,11 +18,12 @@ export default function AdminLayout({ children }) {
   };
 
   const menuItems = [
-    { name: 'Visão Geral', path: '/admin', icon: <LayoutDashboard size={20} /> },
-    { name: 'Equipe & Permissões', path: '/admin/equipe', icon: <Users size={20} /> },
-    { name: 'Serviços & Preços', path: '/admin/servicos', icon: <Scissors size={20} /> },
-    { name: 'Estoque', path: '/admin/estoque', icon: <Box size={20} /> },
-    { name: 'Dados da Empresa', path: '/admin/empresa', icon: <Building2 size={20} /> },
+  { name: 'Visão Geral', path: '/admin', icon: <LayoutDashboard size={20} /> },
+  { name: 'Equipe & Permissões', path: '/admin/equipe', icon: <Users size={20} /> },
+  { name: 'Serviços & Preços', path: '/admin/servicos', icon: <Scissors size={20} /> },
+  { name: 'Estoque', path: '/admin/estoque', icon: <Box size={20} /> },
+  { name: 'Financeiro', path: '/admin/financeiro', icon: <DollarSign size={20} /> }, // ✨ NOVO MENU
+  { name: 'Dados da Empresa', path: '/admin/empresa', icon: <Building2 size={20} /> },
   ];
 
   return (

@@ -3,9 +3,6 @@ import { useAuth } from '../../context/AuthContext';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { Scissors, Calendar, User, Clock, MapPin, ChevronRight, LogOut } from 'lucide-react';
 
-import TopMenu from '../../components/layout/TopMenu';
-import BottomMenu from '../../components/layout/BottomMenu';
-
 export default function HomeCliente() {
   const { user, profile, logout } = useAuth();
   const navigate = useNavigate();
@@ -17,10 +14,7 @@ export default function HomeCliente() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-text-base pb-24 md:pb-8 flex flex-col">
-      
-      {!isMobile && <TopMenu />}
-
+    <div className="flex flex-col text-text-base">
       <div className="flex-1 w-full max-w-4xl mx-auto md:px-6">
         <div className="bg-surface rounded-b-[2rem] p-6 pt-10 border-b border-border-line shadow-sm md:rounded-2xl md:mt-8 md:p-12 md:border">
           <div className="flex justify-between items-center mb-6">
@@ -90,8 +84,6 @@ export default function HomeCliente() {
           )}
         </div>
       </div>
-
-      {isMobile && <BottomMenu />}
     </div>
   );
 }

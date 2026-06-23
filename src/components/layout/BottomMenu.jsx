@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Scissors, Calendar, User, LogIn, LayoutDashboard } from 'lucide-react';
 
-export default function BottomMenu() {
+export default function BottomMenu({ onOpenLogin }) {
   const { user, profile } = useAuth();
 
   const isAdminOuGerente = profile?.role === 'admin' || profile?.role === 'gerente';
@@ -32,10 +32,13 @@ export default function BottomMenu() {
           <span className="text-[10px] font-bold">Perfil</span>
         </Link>
       ) : (
-        <Link to="/login" className="flex flex-col items-center gap-1 text-text-muted hover:text-brand transition-colors cursor-pointer">
+        <button 
+          onClick={onOpenLogin} 
+          className="flex flex-col items-center gap-1 text-text-muted hover:text-brand transition-colors cursor-pointer bg-transparent border-none outline-none"
+        >
           <LogIn size={20} />
           <span className="text-[10px] font-bold">Entrar</span>
-        </Link>
+        </button>
       )}
     </div>
   );
