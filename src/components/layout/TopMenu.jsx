@@ -1,6 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Scissors, LogOut, LayoutDashboard, LogIn } from 'lucide-react';
+import { Scissors, LogOut, LayoutDashboard, LogIn, User, Calendar, Home } from 'lucide-react';
 
 export default function TopMenu({ onOpenLogin }) {
   const { user, profile, logout } = useAuth();
@@ -14,39 +14,62 @@ export default function TopMenu({ onOpenLogin }) {
   const isAdminOuGerente = profile?.role === 'admin' || profile?.role === 'gerente';
 
   return (
-    <header className="bg-surface border-b border-border-line px-8 py-4 flex justify-between items-center shadow-sm sticky top-0 z-50">
-      <Link to="/" className="flex items-center gap-2 text-brand font-bold text-xl hover:scale-105 transition-transform cursor-pointer">
-        <Scissors size={28} /> Horza
+    <header className="bg-surface/80 backdrop-blur-md border-b border-border-line px-6 py-3 flex items-center justify-between sticky top-0 z-50 shadow-sm transition-all">
+      
+      {/* LOGO */}
+      <Link to="/" className="flex items-center gap-2 text-brand font-bold text-lg mr-8 cursor-pointer hover:opacity-80 transition-opacity">
+        <div className="bg-brand text-white p-1.5 rounded-lg">
+          <Scissors size={20} />
+        </div>
+        <span className="hidden sm:block">Horza</span>
       </Link>
-      <nav className="flex items-center gap-6">
-        <Link to="/agendar" className="text-text-muted hover:text-brand font-medium cursor-pointer">Agendar</Link>
-        
-        {user && isAdminOuGerente && (
-          <Link 
-            to="/admin" 
-            className="text-brand border border-brand/30 bg-brand/5 hover:bg-brand/10 font-semibold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer text-sm"
-          >
-            <LayoutDashboard size={16} /> Painel Admin
-          </Link>
-        )}
 
+      {/* NAVEGAÇÃO PRINCIPAL (Páginas) */}
+      <nav className="hidden md:flex items-center gap-1">
+        <Link to="/" className="flex items-center gap-2 px-4 py-2 rounded-lg text-text-muted hover:text-brand hover:bg-brand/5 text-sm font-medium transition-all">
+          <Home size={16} /> Início
+        </Link>
+        <Link to="/agendar" className="flex items-center gap-2 px-4 py-2 rounded-lg text-text-muted hover:text-brand hover:bg-brand/5 text-sm font-medium transition-all">
+          <Calendar size={16} /> Agendar
+        </Link>
+      </nav>
+
+      {/* ESPAÇADOR FLEXÍVEL (Empurra a conta para a direita) */}
+      <div className="flex-grow" />
+
+      {/* ÁREA DE CONTA E IDENTIDADE */}
+      <div className="flex items-center gap-3">
         {user ? (
-          <div className="flex items-center gap-4">
-            {/* Verifique se o profile carregou o nome antes de exibir */}
-            <span className="font-semibold text-text-base">
-              Olá, {profile?.nome?.split(' ')[0] || 'Cliente'}
-            </span>
-            <button onClick={handleLogout} className="...">Sair</button>
+          <div className="flex items-center gap-4 animate-fadeIn">
+            <Link 
+              to="/area-cliente" 
+              className="flex items-center gap-2 px-4 py-2 rounded-full bg-background border border-border-line hover:border-brand transition-all group"
+            >
+              <div className="h-6 w-6 rounded-full bg-brand/10 text-brand flex items-center justify-center text-[10px] font-bold">
+                {profile?.nome?.charAt(0) || 'U'}
+              </div>
+              <span className="text-sm font-semibold text-text-base hidden sm:block">
+                {profile?.nome?.split(' ')[0]}
+              </span>
+            </Link>
+            
+            <button 
+              onClick={handleLogout} 
+              className="p-2 text-text-muted hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
+              title="Sair"
+            >
+              <LogOut size={18} />
+            </button>
           </div>
         ) : (
           <button 
             onClick={onOpenLogin} 
-            className="text-brand font-bold text-sm cursor-pointer bg-brand/10 hover:bg-brand/20 border border-brand/20 px-4 py-2 rounded-xl transition-all flex items-center gap-1.5"
+            className="flex items-center gap-2 px-5 py-2 rounded-full bg-brand text-white text-sm font-semibold hover:bg-brand-hover shadow-lg shadow-brand/20 transition-all cursor-pointer"
           >
-            <LogIn size={16} /> Entrar / Cadastrar
+            <LogIn size={16} /> Entrar
           </button>
         )}
-      </nav>
+      </div>
     </header>
   );
 }

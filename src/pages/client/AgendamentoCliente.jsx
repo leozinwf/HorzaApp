@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
-import { Calendar, Clock, User, CheckCircle2, ArrowRight, ArrowLeft, X, AlertTriangle, Mail, Phone } from 'lucide-react';
+import { Calendar, Clock, User, CheckCircle2, ArrowRight, ArrowLeft, X, AlertTriangle, Mail, Phone, LogIn } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
-export default function AgendamentoCliente() {
+// ✨ Recebemos a função onOpenLogin aqui:
+export default function AgendamentoCliente({ onOpenLogin }) {
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -21,10 +22,10 @@ export default function AgendamentoCliente() {
   const [carregandoHorarios, setCarregandoHorarios] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Estados exclusivos para Agendamento Avulso (Guest)
   const [nomeGuest, setNomeGuest] = useState('');
   const [whatsappGuest, setWhatsappGuest] = useState('');
   const [emailGuest, setEmailGuest] = useState('');
+  const [jaTinhaConta, setJaTinhaConta] = useState(false);
 
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); 
@@ -139,7 +140,6 @@ export default function AgendamentoCliente() {
     return horarios;
   };
 
-  // 🚀 Máscara para telefone brasileiro
   const handleWhatsappChange = (e) => {
     let value = e.target.value.replace(/\D/g, '');
     value = value.replace(/^(\d{2})(\d)/g, '($1) $2');
@@ -149,6 +149,22 @@ export default function AgendamentoCliente() {
 
   const handleConfirmarAgendamento = async (e) => {
     e.preventDefault();
+
+    // 1. Pega o IP (usando um serviço público simples)
+    const res = await fetch('https://api.ipify.org?format=json');
+    const { ip } = await res.json();
+
+    // 2. Verifica limite no banco
+    const { data: podeAgendar } = await supabase.rpc('verificar_limite_agendamentos', { ip_requisitante: ip });
+    
+    if (!podeAgendar) {
+        alert('Muitas tentativas de agendamento detectadas. Tente novamente em uma hora.');
+        return;
+    }
+
+    // 3. Registra o log
+    await supabase.from('agendamento_logs').insert([{ ip_address: ip }]);
+
     if (!data || !horario) return alert('Selecione uma data e um horário válidos.');
 
     setLoading(true);
@@ -182,17 +198,24 @@ export default function AgendamentoCliente() {
           password: senhaTemporaria
         });
 
-        if (authError) throw authError;
+        let novoUserId = null;
 
-        const novoUserId = authData.user?.id;
-
-        if (novoUserId) {
-          await supabase.from('usuarios').insert([{
-            id: novoUserId,
-            nome: nomeGuest,
-            whatsapp: whatsappGuest,
-            role: 'cliente'
-          }]);
+        if (authError) {
+          if (authError.message.includes('User already registered')) {
+            setJaTinhaConta(true);
+          } else {
+            throw authError; 
+          }
+        } else {
+          novoUserId = authData.user?.id;
+          if (novoUserId) {
+            await supabase.from('usuarios').insert([{
+              id: novoUserId,
+              nome: nomeGuest,
+              whatsapp: whatsappGuest,
+              role: 'cliente'
+            }]);
+          }
         }
 
         const { error: agError } = await supabase.from('agendamentos').insert([{
@@ -208,10 +231,10 @@ export default function AgendamentoCliente() {
         }]);
 
         if (agError) throw agError;
+        
+        localStorage.removeItem('agendamento_pendente');
         setPasso(4);
       }
-      
-      localStorage.removeItem('agendamento_pendente');
     } catch (err) {
       alert('Erro ao processar agendamento: ' + err.message);
     } finally {
@@ -228,6 +251,7 @@ export default function AgendamentoCliente() {
     setNomeGuest('');
     setWhatsappGuest('');
     setEmailGuest('');
+    setJaTinhaConta(false);
     setPasso(1);
     setIsCancelModalOpen(false);
     navigate('/');
@@ -388,21 +412,34 @@ export default function AgendamentoCliente() {
             </form>
           )}
 
-          {/* PASSO 4: Sucesso Avançado */}
+          {/* 🚀 PASSO 4: SUCESSO COM BOTÃO DE LOGIN */}
           {passo === 4 && (
             <div className="bg-surface p-8 rounded-2xl border border-border-line shadow-sm text-center animate-fadeIn">
               <div className="h-20 w-20 bg-green-500/10 rounded-full flex items-center justify-center text-green-500 mx-auto mb-6"><CheckCircle2 size={40} /></div>
               <h2 className="text-2xl font-black text-text-base mb-2">Horário Reservado!</h2>
               
-              {!user && emailGuest ? (
+              {jaTinhaConta ? (
                 <p className="text-sm text-text-muted mb-8 leading-relaxed">
-                  O horário foi bloqueado para você! Enviamos um link de confirmação para o e-mail <strong>{emailGuest}</strong>. Abra seu e-mail e clique no link para validar seu cadastro e confirmar o corte.
+                  Tudo certo! O horário foi garantido para você. Notamos que o e-mail <strong>{emailGuest}</strong> já possui cadastro. <strong>Faça login</strong> para acompanhar o seu agendamento!
+                </p>
+              ) : !user && emailGuest ? (
+                <p className="text-sm text-text-muted mb-8 leading-relaxed">
+                  O horário foi bloqueado para você! Enviamos um link de confirmação para o e-mail <strong>{emailGuest}</strong>. Abra seu e-mail e clique no link para validar o seu cadastro.
                 </p>
               ) : (
-                <p className="text-sm text-text-muted mb-8">Seu agendamento foi concluído com sucesso e adicionado ao seu painel!</p>
+                <p className="text-sm text-text-muted mb-8">O seu agendamento foi concluído com sucesso e adicionado ao seu painel!</p>
               )}
               
-              <button onClick={() => navigate('/')} className="w-full bg-background border border-border-line p-3 rounded-xl text-sm font-bold text-text-base hover:bg-border-line transition-colors cursor-pointer">Voltar para o Início</button>
+              <div className="flex flex-col sm:flex-row gap-3 mt-4">
+                {jaTinhaConta && (
+                  <button onClick={() => { onOpenLogin(); navigate('/'); }} className="w-full bg-brand text-white p-3 rounded-xl text-sm font-bold hover:bg-brand-hover transition-colors cursor-pointer flex items-center justify-center gap-2">
+                    <LogIn size={18}/> Fazer Login
+                  </button>
+                )}
+                <button onClick={() => navigate('/')} className={`w-full bg-background border border-border-line p-3 rounded-xl text-sm font-bold text-text-base hover:bg-border-line transition-colors cursor-pointer ${jaTinhaConta ? '' : 'sm:col-span-2'}`}>
+                  Voltar para o Início
+                </button>
+              </div>
             </div>
           )}
 

@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ModalProvider } from './context/ModalContext';
+import { supabase } from './services/supabaseClient'; // ✨ Importante para o ouvinte
 
 // Telas de Cliente
 import AgendamentoCliente from './pages/client/AgendamentoCliente';
 import HomeCliente from './pages/client/HomeCliente';
+import AreaCliente from './pages/client/AreaCliente';
 
 // Tela do barbeiro
 import AgendaBarbeiro from './pages/barber/AgendaBarbeiro';
@@ -23,7 +25,6 @@ import AdminServicos from './pages/admin/AdminServicos';
 import AdminEstoque from './pages/admin/AdminEstoque';
 import AdminFinanceiro from './pages/admin/AdminFinanceiro';
 
-// Proteção de Rotas Atualizada
 function ProtectedRoute({ children, allowedRoles }) {
   const { user, profile, loading } = useAuth();
 
@@ -35,10 +36,8 @@ function ProtectedRoute({ children, allowedRoles }) {
     );
   }
 
-  // Como o login agora é um Popup (Modal), redirecionamos os não logados para a Home
   if (!user) return <Navigate to="/" replace />;
-  
-  // Controle de Nível de Acesso (Cargos)
+
   if (allowedRoles && !allowedRoles.includes(profile?.role)) {
     if (profile?.role === 'admin' || profile?.role === 'gerente') return <Navigate to="/admin" replace />;
     if (profile?.role === 'funcionario') return <Navigate to="/barbeiro" replace />;
@@ -48,22 +47,47 @@ function ProtectedRoute({ children, allowedRoles }) {
   return children;
 }
 
-// Estrutura Interna da App para controlar os Menus e o Popup de Login
 function AppContent() {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [loginModalMode, setLoginModalMode] = useState('login'); // ✨ Controla a tela inicial da modal
+
+  // 🚀 OUVINTE DE RECUPERAÇÃO DE SENHA
+  useEffect(() => {
+    // 1. Verifica se houve erro de link expirado na URL
+    const hash = window.location.hash;
+    if (hash.includes('error_code=otp_expired')) {
+      alert('O link de recuperação expirou ou já foi utilizado. Por favor, solicite um novo link.');
+      window.history.replaceState(null, '', window.location.pathname); // Limpa a URL
+    }
+
+    // 2. Fica escutando se o Supabase autorizou a recuperação de senha
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // Se for uma recuperação de senha, abrimos a modal no modo update
+      if (event === 'PASSWORD_RECOVERY') {
+        setLoginModalMode('update_password');
+        setIsLoginModalOpen(true);
+      }
+      // Se o usuário já logou mas precisa de senha, o Supabase já tratou[cite: 5]
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const openLogin = () => {
+    setLoginModalMode('login');
+    setIsLoginModalOpen(true);
+  };
 
   return (
     <>
-      {/* Menus Globais que disparam a abertura do Login */}
-      <TopMenu onOpenLogin={() => setIsLoginModalOpen(true)} />
-      
-      {/* Container principal das páginas (com padding em baixo para não sobrepor o menu mobile) */}
+      <TopMenu onOpenLogin={openLogin} />
+
       <main className="pb-16 md:pb-0 min-h-screen bg-background pt-20">
         <Routes>
           <Route path="/" element={<HomeCliente />} />
-          <Route path="/agendar" element={<AgendamentoCliente />} />
+          <Route path="/agendar" element={<AgendamentoCliente onOpenLogin={openLogin} />} />
+          <Route path="/area-cliente" element={<ProtectedRoute allowedRoles={['cliente']}><AreaCliente /></ProtectedRoute>} />
 
-          {/* ROTAS MODULARIZADAS DO ADMIN */}
           <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin', 'gerente']}><DashboardAdmin /></ProtectedRoute>} />
           <Route path="/admin/equipe" element={<ProtectedRoute allowedRoles={['admin', 'gerente']}><AdminEquipe /></ProtectedRoute>} />
           <Route path="/admin/servicos" element={<ProtectedRoute allowedRoles={['admin', 'gerente']}><AdminServicos /></ProtectedRoute>} />
@@ -71,29 +95,25 @@ function AppContent() {
           <Route path="/admin/empresa" element={<ProtectedRoute allowedRoles={['admin']}><AdminEmpresa /></ProtectedRoute>} />
           <Route path="/admin/financeiro" element={<ProtectedRoute allowedRoles={['admin', 'gerente']}><AdminFinanceiro /></ProtectedRoute>} />
 
-          {/* ROTA DO BARBEIRO / FUNCIONÁRIO */}
           <Route path="/barbeiro" element={<ProtectedRoute allowedRoles={['funcionario']}><AgendaBarbeiro /></ProtectedRoute>} />
 
-          {/* Rota de Fallback (Páginas inexistentes vão para a Home) */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
 
-      {/* Apenas visível em ecrãs móveis */}
       <div className="md:hidden">
-        <BottomMenu onOpenLogin={() => setIsLoginModalOpen(true)} />
+        <BottomMenu onOpenLogin={openLogin} />
       </div>
 
-      {/* O NOSSO NOVO POPUP DE LOGIN GLOBAL */}
-      <LoginModal 
-        isOpen={isLoginModalOpen} 
-        onClose={() => setIsLoginModalOpen(false)} 
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        initialMode={loginModalMode} // ✨ Passa o modo para a modal
       />
     </>
   );
 }
 
-// Envolucro Principal com todos os Providers (Contextos)
 export default function App() {
   return (
     <AuthProvider>

@@ -19,3 +19,7 @@ body {
   background-color: var(--color-background);
   color: var(--color-text-base);
 }
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
