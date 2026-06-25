@@ -69,32 +69,19 @@ export default function AgendamentoCliente({ onOpenLogin }) {
   const buscarDisponibilidade = async () => {
     setCarregandoHorarios(true);
     try {
-      const { data: configData } = await supabase
-        .from('configuracoes_agenda')
-        .select('*')
-        .eq('barbeiro_id', barbeiroSelecionado.id)
-        .single();
+      // 1. Pega regras da Empresa
+      const { data: config } = await supabase.from('barbearias').select('hora_abertura, hora_fechamento, dias_funcionamento').eq('id', servicoSelecionado.barbearia_id).single();
+      
+      // 2. Pega Exceções (Bloqueios / Extras do barbeiro)
+      const { data: excecoes } = await supabase.from('excecoes_agenda').select('*').eq('barbeiro_id', barbeiroSelecionado.id).eq('data', data);
 
-      const config = configData || {
-        hora_abertura: '09:00:00',
-        hora_fechamento: '19:00:00',
-        intervalo_minutos: 30,
-        dias_funcionamento: [1, 2, 3, 4, 5, 6]
-      };
-
+      // 3. Pega Agendamentos já feitos naquele dia
       const dataInicio = new Date(`${data}T00:00:00`).toISOString();
       const dataFim = new Date(`${data}T23:59:59`).toISOString();
+      const { data: agendamentosDia } = await supabase.from('agendamentos').select('data_hora, servicos(duracao_minutos)').eq('barbeiro_id', barbeiroSelecionado.id).not('status_atendimento', 'eq', 'cancelado').not('status_atendimento', 'eq', 'ausente').gte('data_hora', dataInicio).lte('data_hora', dataFim);
 
-      const { data: agendamentosDia } = await supabase
-        .from('agendamentos')
-        .select('data_hora, servicos(duracao_minutos)')
-        .eq('barbeiro_id', barbeiroSelecionado.id)
-        .not('status_atendimento', 'eq', 'cancelado')
-        .not('status_atendimento', 'eq', 'ausente')
-        .gte('data_hora', dataInicio)
-        .lte('data_hora', dataFim);
-
-      const horarios = gerarHorarios(config, agendamentosDia || [], data);
+      // 4. Gera os horários passando todas essas novas regras
+      const horarios = gerarHorarios(config, excecoes || [], agendamentosDia || [], data);
       setHorariosDisponiveis(horarios);
 
     } catch (err) {
@@ -104,42 +91,50 @@ export default function AgendamentoCliente({ onOpenLogin }) {
     }
   };
 
-  const gerarHorarios = (config, agendamentosDia, dataEscolhida) => {
-    const dataObj = new Date(`${dataEscolhida}T00:00:00`);
-    const diaSemana = dataObj.getDay();
-    if (!config.dias_funcionamento.includes(diaSemana)) return [];
-
-    const horarios = [];
-    let atual = new Date(`${dataEscolhida}T${config.hora_abertura}`);
-    const fim = new Date(`${dataEscolhida}T${config.hora_fechamento}`);
+  const gerarHorarios = (config, excecoes, agendamentosDia, dataEscolhida) => {
+    if (!config) return [];
+    const diaSemana = new Date(`${dataEscolhida}T12:00:00`).getDay();
+    const isDiaPadrao = config.dias_funcionamento.includes(diaSemana);
     
     const agoraBrString = new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' });
     const agora = new Date(agoraBrString);
-    const duracaoDesejada = servicoSelecionado?.duracao_minutos || config.intervalo_minutos;
+    const duracaoDesejada = servicoSelecionado?.duracao_minutos || 30;
 
-    while (atual < fim) {
-      const horaStr = atual.toTimeString().substring(0, 5);
-      const slotFim = new Date(atual.getTime() + duracaoDesejada * 60000);
+    let horariosLivres = [];
 
-      if (dataEscolhida === hoje && atual < agora) {
-        atual = new Date(atual.getTime() + config.intervalo_minutos * 60000);
-        continue;
+    // Vasculha o dia todo (06h às 23:30h)
+    for (let h = 6; h <= 23; h++) {
+      for (let m = 0; m < 60; m += 30) {
+        const horaStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+        
+        const isHoraPadrao = horaStr >= config.hora_abertura.substring(0, 5) && horaStr < config.hora_fechamento.substring(0, 5);
+        const isAbertoPadrao = isDiaPadrao && isHoraPadrao;
+
+        const excecao = excecoes.find(e => e.horario.startsWith(horaStr));
+        
+        // Regra de Ouro: Está aberto se (É Padrão e não tem bloqueio) OU (Não é padrão mas tem liberação)
+        const isAberto = (isAbertoPadrao && (!excecao || excecao.tipo !== 'bloqueio')) || (!isAbertoPadrao && excecao?.tipo === 'liberacao');
+
+        if (!isAberto) continue; // Pula se estiver fechado
+
+        // Verifica se a hora já passou no dia de hoje
+        const horaAtualSlot = new Date(`${dataEscolhida}T${horaStr}:00`);
+        if (dataEscolhida === hoje && horaAtualSlot < agora) continue;
+
+        // Verifica se choca com algum agendamento existente
+        const slotFim = new Date(horaAtualSlot.getTime() + duracaoDesejada * 60000);
+        const conflito = agendamentosDia.some(ag => {
+          const agInicio = new Date(ag.data_hora);
+          const duracaoConcorrente = ag.servicos?.duracao_minutos || 30;
+          const agFim = new Date(agInicio.getTime() + duracaoConcorrente * 60000);
+          return (horaAtualSlot < agFim && slotFim > agInicio);
+        });
+
+        if (!conflito) horariosLivres.push(horaStr);
       }
-      if (slotFim > fim) break; 
-
-      const conflito = agendamentosDia.some(ag => {
-        const agInicio = new Date(ag.data_hora);
-        const duracaoConcorrente = ag.servicos?.duracao_minutos || config.intervalo_minutos;
-        const agFim = new Date(agInicio.getTime() + duracaoConcorrente * 60000);
-        return (atual < agFim && slotFim > agInicio);
-      });
-
-      if (!conflito) horarios.push(horaStr);
-      atual = new Date(atual.getTime() + config.intervalo_minutos * 60000);
     }
-    return horarios;
+    return horariosLivres;
   };
-
   const handleWhatsappChange = (e) => {
     let value = e.target.value.replace(/\D/g, '');
     value = value.replace(/^(\d{2})(\d)/g, '($1) $2');

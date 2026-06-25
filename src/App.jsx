@@ -2,28 +2,25 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ModalProvider } from './context/ModalContext';
-import { supabase } from './services/supabaseClient'; // ✨ Importante para o ouvinte
+import { supabase } from './services/supabaseClient';
 
-// Telas de Cliente
-import AgendamentoCliente from './pages/client/AgendamentoCliente';
 import HomeCliente from './pages/client/HomeCliente';
+import AgendamentoCliente from './pages/client/AgendamentoCliente';
 import AreaCliente from './pages/client/AreaCliente';
-
-// Tela do barbeiro
 import AgendaBarbeiro from './pages/barber/AgendaBarbeiro';
 
-// Componentes de layout globais
 import TopMenu from './components/layout/TopMenu';
 import BottomMenu from './components/layout/BottomMenu';
+import AdminLayout from './components/layout/AdminLayout';
 import LoginModal from './components/modals/LoginModal';
 
-// Telas do Admin
 import DashboardAdmin from './pages/admin/DashboardAdmin';
 import AdminEquipe from './pages/admin/AdminEquipe';
 import AdminEmpresa from './pages/admin/AdminEmpresa';
 import AdminServicos from './pages/admin/AdminServicos';
 import AdminEstoque from './pages/admin/AdminEstoque';
 import AdminFinanceiro from './pages/admin/AdminFinanceiro';
+import AdminAgendaEquipe from './pages/admin/AdminAgendaEquipe';
 
 function ProtectedRoute({ children, allowedRoles }) {
   const { user, profile, loading } = useAuth();
@@ -37,37 +34,28 @@ function ProtectedRoute({ children, allowedRoles }) {
   }
 
   if (!user) return <Navigate to="/" replace />;
-
-  if (allowedRoles && !allowedRoles.includes(profile?.role)) {
-    if (profile?.role === 'admin' || profile?.role === 'gerente') return <Navigate to="/admin" replace />;
-    if (profile?.role === 'funcionario') return <Navigate to="/barbeiro" replace />;
-    return <Navigate to="/" replace />;
-  }
+  if (allowedRoles && !allowedRoles.includes(profile?.role)) return <Navigate to="/" replace />;
 
   return children;
 }
 
 function AppContent() {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
-  const [loginModalMode, setLoginModalMode] = useState('login'); // ✨ Controla a tela inicial da modal
+  const [loginModalMode, setLoginModalMode] = useState('login');
 
-  // 🚀 OUVINTE DE RECUPERAÇÃO DE SENHA
   useEffect(() => {
-    // 1. Verifica se houve erro de link expirado na URL
     const hash = window.location.hash;
     if (hash.includes('error_code=otp_expired')) {
-      alert('O link de recuperação expirou ou já foi utilizado. Por favor, solicite um novo link.');
-      window.history.replaceState(null, '', window.location.pathname); // Limpa a URL
+      alert('O link de recuperação expirou. Por favor, solicite um novo.');
+      window.history.replaceState(null, '', window.location.pathname);
     }
 
-    // 2. Fica escutando se o Supabase autorizou a recuperação de senha
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      // Se for uma recuperação de senha, abrimos a modal no modo update
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
         setLoginModalMode('update_password');
         setIsLoginModalOpen(true);
+        window.history.replaceState(null, '', window.location.pathname);
       }
-      // Se o usuário já logou mas precisa de senha, o Supabase já tratou[cite: 5]
     });
 
     return () => subscription.unsubscribe();
@@ -80,22 +68,26 @@ function AppContent() {
 
   return (
     <>
+      {/* Menu do topo aparece sempre agora */}
       <TopMenu onOpenLogin={openLogin} />
-
-      <main className="pb-16 md:pb-0 min-h-screen bg-background pt-20">
+      
+      {/* O padding-top compensa a barra fixa do TopMenu e o BottomMenu no mobile */}
+      <main className="pb-16 md:pb-0 min-h-screen bg-background pt-[72px]">
         <Routes>
           <Route path="/" element={<HomeCliente />} />
           <Route path="/agendar" element={<AgendamentoCliente onOpenLogin={openLogin} />} />
-          <Route path="/area-cliente" element={<ProtectedRoute allowedRoles={['cliente']}><AreaCliente /></ProtectedRoute>} />
+          <Route path="/area-cliente" element={<ProtectedRoute allowedRoles={['cliente', 'admin', 'gerente', 'funcionario']}><AreaCliente /></ProtectedRoute>} />
+          <Route path="/barbeiro" element={<ProtectedRoute allowedRoles={['funcionario', 'gerente', 'admin']}><AgendaBarbeiro /></ProtectedRoute>} />
 
-          <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin', 'gerente']}><DashboardAdmin /></ProtectedRoute>} />
-          <Route path="/admin/equipe" element={<ProtectedRoute allowedRoles={['admin', 'gerente']}><AdminEquipe /></ProtectedRoute>} />
-          <Route path="/admin/servicos" element={<ProtectedRoute allowedRoles={['admin', 'gerente']}><AdminServicos /></ProtectedRoute>} />
-          <Route path="/admin/estoque" element={<ProtectedRoute allowedRoles={['admin', 'gerente']}><AdminEstoque /></ProtectedRoute>} />
-          <Route path="/admin/empresa" element={<ProtectedRoute allowedRoles={['admin']}><AdminEmpresa /></ProtectedRoute>} />
-          <Route path="/admin/financeiro" element={<ProtectedRoute allowedRoles={['admin', 'gerente']}><AdminFinanceiro /></ProtectedRoute>} />
-
-          <Route path="/barbeiro" element={<ProtectedRoute allowedRoles={['funcionario']}><AgendaBarbeiro /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin', 'gerente']}><AdminLayout /></ProtectedRoute>}>
+            <Route index element={<DashboardAdmin />} />
+            <Route path="equipe" element={<AdminEquipe />} />
+            <Route path="agenda" element={<AdminAgendaEquipe />} />
+            <Route path="servicos" element={<AdminServicos />} />
+            <Route path="estoque" element={<AdminEstoque />} />
+            <Route path="empresa" element={<AdminEmpresa />} />
+            <Route path="financeiro" element={<AdminFinanceiro />} />
+          </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
@@ -105,11 +97,7 @@ function AppContent() {
         <BottomMenu onOpenLogin={openLogin} />
       </div>
 
-      <LoginModal
-        isOpen={isLoginModalOpen}
-        onClose={() => setIsLoginModalOpen(false)}
-        initialMode={loginModalMode} // ✨ Passa o modo para a modal
-      />
+      <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} initialMode={loginModalMode} />
     </>
   );
 }

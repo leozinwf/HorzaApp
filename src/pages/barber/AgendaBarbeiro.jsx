@@ -1,269 +1,220 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabaseClient';
+import { useAuth } from '../../context/AuthContext';
 import { useModal } from '../../context/ModalContext';
-import { useNavigate } from 'react-router-dom';
-import { 
-  Scissors, LogOut, Calendar as CalendarIcon, 
-  CheckCircle2, XCircle, Clock, User, DollarSign, Plus, X, Phone 
-} from 'lucide-react';
+import { Calendar, Clock, User, Phone, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, Scissors, Lock, Unlock } from 'lucide-react';
 
 export default function AgendaBarbeiro() {
-  const { user, profile, logout } = useAuth();
-  const { showConfirm, showAlert } = useModal();
-  const navigate = useNavigate();
-
+  const { user, profile } = useAuth();
+  const { showAlert, showConfirm } = useModal();
   const [agendamentos, setAgendamentos] = useState([]);
-  const [servicosDisponiveis, setServicosDisponiveis] = useState([]);
+  const [configBarbearia, setConfigBarbearia] = useState(null);
+  const [excecoes, setExcecoes] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  const [dataSelecionada, setDataSelecionada] = useState(new Date().toISOString().split('T')[0]);
-  const [resumoMes, setResumoMes] = useState({ cortes: 0, valorGerado: 0 });
-
-  // Controle do Formulário Manual de Balcão
-  const [isManualModalOpen, setIsManualModalOpen] = useState(false);
-  const [nomeClienteManual, setNomeClienteManual] = useState('');
-  const [whatsappClienteManual, setWhatsappClienteManual] = useState('');
-  const [servicoSelecionado, setServicoSelecionado] = useState('');
-  const [horaSelecionada, setHoraSelecionada] = useState('14:00');
+  const hojeFormatoHTML = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const [dataSelecionada, setDataSelecionada] = useState(hojeFormatoHTML);
+  const [tab, setTab] = useState('agenda'); // 'agenda' ou 'bloqueios'
 
   useEffect(() => {
-    if (user?.id && profile?.barbearia_id) {
-      buscarAgendaDoDia();
-      calcularResumoDoMes();
-      carregarServiciosDaBarbearia();
+    if (user && profile?.barbearia_id) {
+      carregarTudo();
     }
   }, [user, profile, dataSelecionada]);
 
-  const buscarAgendaDoDia = async () => {
+  const carregarTudo = async () => {
     setLoading(true);
     try {
-      const inicioDoDia = `${dataSelecionada}T00:00:00.000Z`;
-      const fimDoDia = `${dataSelecionada}T23:59:59.999Z`;
+      // 1. Busca configurações da Barbearia
+      const { data: config } = await supabase.from('barbearias').select('hora_abertura, hora_fechamento, dias_funcionamento').eq('id', profile.barbearia_id).single();
+      setConfigBarbearia(config);
 
-      const { data, error } = await supabase
-        .from('agendamentos')
-        .select(`
-          id, data_hora, status_atendimento, nome_cliente_avulso, whatsapp_cliente_avulso,
-          servicos (nome_servico, preco, duracao_minutos),
-          cliente:usuarios!agendamentos_cliente_id_fkey (nome, whatsapp)
-        `)
-        .eq('barbeiro_id', user.id)
-        .gte('data_hora', inicioDoDia)
-        .lte('data_hora', fimDoDia)
-        .order('data_hora', { ascending: true });
+      // 2. Busca Exceções (Bloqueios/Liberações do dia)
+      const { data: exc } = await supabase.from('excecoes_agenda').select('*').eq('barbeiro_id', user.id).eq('data', dataSelecionada);
+      setExcecoes(exc || []);
 
-      if (error) throw error;
-      setAgendamentos(data || []);
+      // 3. Busca Agendamentos do dia
+      const dataInicio = new Date(`${dataSelecionada}T00:00:00`).toISOString();
+      const dataFim = new Date(`${dataSelecionada}T23:59:59`).toISOString();
+      const { data: ags } = await supabase.from('agendamentos').select('id, data_hora, status_atendimento, nome_cliente_avulso, whatsapp_cliente_avulso, servicos(nome_servico, duracao_minutos), usuarios(nome, whatsapp)').eq('barbeiro_id', user.id).gte('data_hora', dataInicio).lte('data_hora', dataFim).order('data_hora', { ascending: true });
+      setAgendamentos(ags || []);
+
     } catch (err) {
-      console.error(err.message);
+      console.error(err);
     } finally {
       setLoading(false);
     }
   };
 
-  const carregarServiciosDaBarbearia = async () => {
-    try {
-      const { data } = await supabase
-        .from('servicos')
-        .select('*')
-        .eq('barbearia_id', profile.barbearia_id);
-      setServicosDisponiveis(data || []);
-    } catch (err) {
-      console.error(err);
-    }
+  const mudarDia = (dias) => {
+    const novaData = new Date(`${dataSelecionada}T12:00:00`);
+    novaData.setDate(novaData.getDate() + dias);
+    setDataSelecionada(novaData.toLocaleDateString('en-CA'));
   };
 
-  const calcularResumoDoMes = async () => {
-    try {
-      const hoje = new Date();
-      const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString();
-      const ultimoDiaMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0, 23, 59, 59).toISOString();
-
-      const { data } = await supabase
-        .from('agendamentos')
-        .select('servicos(preco)')
-        .eq('barbeiro_id', user.id)
-        .eq('status_atendimento', 'concluido')
-        .gte('data_hora', primeiroDiaMes)
-        .lte('data_hora', ultimoDiaMes);
-
-      const totalCortes = data?.length || 0;
-      const totalValor = data?.reduce((acc, curr) => acc + Number(curr.servicos?.preco || 0), 0) || 0;
-
-      setResumoMes({ cortes: totalCortes, valorGerado: totalValor });
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleSalvarAgendamentoManual = async (e) => {
-    e.preventDefault();
-    if (!nomeClienteManual || !servicoSelecionado) return;
-
-    try {
-      // Mescla o dia escolhido na tela com a hora do input
-      const dataHoraISO = new Date(`${dataSelecionada}T${horaSelecionada}:00`).toISOString();
-
-      const { error } = await supabase.from('agendamentos').insert([{
-        barbearia_id: profile.barbearia_id,
-        barbeiro_id: user.id,
-        servico_id: servicoSelecionado,
-        data_hora: dataHoraISO,
-        status_atendimento: 'concluido', // Já cria direto como concluído
-        nome_cliente_avulso: nomeClienteManual,
-        whatsapp_cliente_avulso: whatsappClienteManual
-      }]);
-
-      if (error) throw error;
-
-      showAlert('Sucesso', 'Atendimento de balcão lançado com sucesso!');
-      setIsManualModalOpen(false);
-      setNomeClienteManual('');
-      setWhatsappClienteManual('');
-      buscarAgendaDoDia();
-      calcularResumoDoMes();
-    } catch (err) {
-      showAlert('Erro', err.message);
-    }
-  };
-
-  const alterarStatus = async (id, novoStatus) => {
-    const acaoTexto = novoStatus === 'concluido' ? 'marcar como CONCLUÍDO' : 'informar FALTA';
-    showConfirm('Atualizar Status', `Deseja ${acaoTexto}?`, async () => {
+  const atualizarStatusAgendamento = async (id, novoStatus) => {
+    
+    // Função interna que executa a gravação no banco
+    const processarAtualizacao = async () => {
       try {
         await supabase.from('agendamentos').update({ status_atendimento: novoStatus }).eq('id', id);
-        buscarAgendaDoDia();
-        calcularResumoDoMes();
-      } catch (err) {
-        showAlert('Erro', err.message);
+        setAgendamentos(prev => prev.map(ag => ag.id === id ? { ...ag, status_atendimento: novoStatus } : ag));
+        
+        // Modal de Sucesso Customizada!
+        showAlert('Feito!', `O agendamento foi marcado como ${novoStatus.toUpperCase()}.`, 'success');
+      } catch(err) {
+        showAlert('Erro', 'Ocorreu um erro: ' + err.message, 'error');
       }
-    });
+    };
+
+    // Abre a modal linda de Confirmação em vez do "window.confirm"
+    if (novoStatus === 'ausente') {
+       showConfirm('Marcar Falta?', 'Tem a certeza que este cliente não compareceu?', processarAtualizacao);
+    } else {
+       processarAtualizacao();
+    }
+  };
+
+  // ✨ LÓGICA DE GERENCIAR HORÁRIOS (O CORAÇÃO DO SISTEMA) ✨
+  const handleToggleHorario = async (horaBase, isAbertoPadrao) => {
+    // Procura se já tem uma regra (exceção) para esta hora
+    const excecaoExistente = excecoes.find(e => e.horario.startsWith(horaBase));
+    
+    if (excecaoExistente) {
+      // Se clicou de novo, apaga a exceção e volta ao normal
+      await supabase.from('excecoes_agenda').delete().eq('id', excecaoExistente.id);
+      setExcecoes(prev => prev.filter(e => e.id !== excecaoExistente.id));
+    } else {
+      // Se não tem regra, cria uma. 
+      // Se o horário era pra estar aberto, ele bloqueia. Se era pra estar fechado, ele libera.
+      const tipo = isAbertoPadrao ? 'bloqueio' : 'liberacao';
+      const { data } = await supabase.from('excecoes_agenda').insert([{
+        barbeiro_id: user.id, data: dataSelecionada, horario: `${horaBase}:00`, tipo
+      }]).select().single();
+      
+      if (data) setExcecoes(prev => [...prev, data]);
+    }
+  };
+
+  // Gerador da grelha de horários (06:00 às 23:30)
+  const gerarGridHorarios = () => {
+    if (!configBarbearia) return [];
+    const diaSemana = new Date(`${dataSelecionada}T12:00:00`).getDay();
+    const isDiaPadrao = configBarbearia.dias_funcionamento.includes(diaSemana);
+    
+    let grid = [];
+    for (let h = 6; h <= 23; h++) {
+      for (let m = 0; m < 60; m += 30) {
+        const horaFormatada = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+        
+        // Regra Padrão (Sem exceções)
+        const isHoraPadrao = horaFormatada >= configBarbearia.hora_abertura.substring(0, 5) && horaFormatada < configBarbearia.hora_fechamento.substring(0, 5);
+        const isAbertoPadrao = isDiaPadrao && isHoraPadrao;
+
+        // Verifica o que o Barbeiro decidiu
+        const excecao = excecoes.find(e => e.horario.startsWith(horaFormatada));
+        let statusFinal = 'fechado';
+        
+        if (isAbertoPadrao) {
+            statusFinal = (excecao?.tipo === 'bloqueio') ? 'bloqueado' : 'aberto';
+        } else {
+            statusFinal = (excecao?.tipo === 'liberacao') ? 'extra' : 'fechado';
+        }
+
+        grid.push({ hora: horaFormatada, isAbertoPadrao, statusFinal });
+      }
+    }
+    return grid;
   };
 
   return (
-    <div className="min-h-screen bg-background text-text-base pb-10">
+    <div className="max-w-3xl mx-auto p-4 md:p-6 mb-20">
       
-      {/* HEADER */}
-      <header className="bg-surface border-b border-b-border-line px-6 py-4 flex justify-between items-center shadow-xs sticky top-0 z-40">
-        <div className="flex items-center gap-2 text-brand font-bold text-lg">
-          <Scissors size={24} /> Painel do Profissional
+      <div className="mb-6">
+        <h1 className="text-2xl font-black text-text-base">Painel do Barbeiro</h1>
+        <p className="text-sm text-text-muted">Acompanhe sua agenda e controle seus horários livremente.</p>
+      </div>
+
+      {/* CONTROLE DE DATA */}
+      <div className="bg-surface p-4 rounded-2xl border border-border-line flex items-center justify-between mb-6 shadow-sm">
+        <button onClick={() => mudarDia(-1)} className="p-2 hover:bg-background rounded-lg text-text-muted hover:text-brand transition-colors cursor-pointer"><ChevronLeft size={24} /></button>
+        <div className="flex flex-col items-center">
+          <input type="date" value={dataSelecionada} onChange={(e) => setDataSelecionada(e.target.value)} className="bg-transparent font-bold text-text-base text-lg outline-none cursor-pointer text-center" />
+          {dataSelecionada === hojeFormatoHTML && <span className="text-[10px] font-black text-brand uppercase tracking-wider mt-1">Hoje</span>}
         </div>
-        <div className="flex items-center gap-4">
-          <button onClick={() => setIsManualModalOpen(true)} className="bg-brand hover:bg-brand-hover text-white text-xs font-bold p-2 px-3 rounded-xl flex items-center gap-1 cursor-pointer transition-colors">
-            <Plus size={16}/> Encaixe Manual
-          </button>
-          <button onClick={async () => { await logout(); navigate('/login'); }} className="text-text-muted hover:text-red-500 flex items-center gap-1.5 text-xs font-bold cursor-pointer">
-            <LogOut size={16} /> Sair
-          </button>
-        </div>
-      </header>
+        <button onClick={() => mudarDia(1)} className="p-2 hover:bg-background rounded-lg text-text-muted hover:text-brand transition-colors cursor-pointer"><ChevronRight size={24} /></button>
+      </div>
 
-      <main className="p-6 max-w-2xl mx-auto space-y-6">
-        {/* RESUMOS */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-surface p-4 rounded-2xl border border-border-line text-center shadow-xs">
-            <Scissors size={18} className="text-brand mx-auto mb-1" />
-            <span className="text-[10px] font-bold text-text-muted uppercase">Cortes Concluídos</span>
-            <p className="text-xl font-black mt-0.5">{resumoMes.cortes}</p>
-          </div>
-          <div className="bg-surface p-4 rounded-2xl border border-border-line text-center shadow-xs">
-            <DollarSign size={18} className="text-green-500 mx-auto mb-1" />
-            <span className="text-[10px] font-bold text-text-muted uppercase">Sua Produção</span>
-            <p className="text-xl font-black mt-0.5">R$ {resumoMes.valorGerado.toFixed(2)}</p>
-          </div>
-        </div>
+      {/* ABAS */}
+      <div className="flex gap-2 p-1 bg-surface border border-border-line rounded-xl mb-6">
+        <button onClick={() => setTab('agenda')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all cursor-pointer ${tab === 'agenda' ? 'bg-brand text-white shadow-sm' : 'text-text-muted hover:text-text-base'}`}>Agendamentos</button>
+        <button onClick={() => setTab('bloqueios')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all cursor-pointer ${tab === 'bloqueios' ? 'bg-brand text-white shadow-sm' : 'text-text-muted hover:text-text-base'}`}>Abrir / Fechar Horários</button>
+      </div>
 
-        {/* CALENDÁRIO */}
-        <div className="bg-surface p-4 rounded-2xl border border-border-line shadow-xs">
-          <label className="block text-xs font-bold text-text-muted uppercase mb-2 flex items-center gap-1.5"><CalendarIcon size={14}/> Visualizar Dia</label>
-          <input type="date" value={dataSelecionada} onChange={(e) => setDataSelecionada(e.target.value)} className="w-full bg-background border border-border-line p-2.5 rounded-xl text-sm font-bold text-text-base outline-none focus:border-brand" />
-        </div>
+      {/* TELA DE GERENCIAR HORÁRIOS */}
+      {tab === 'bloqueios' && (
+        <div className="animate-fadeIn bg-surface p-6 rounded-2xl border border-border-line">
+            <h3 className="font-bold mb-2 flex items-center gap-2"><Clock size={18}/> Gerenciar Horários</h3>
+            <p className="text-xs text-text-muted mb-6">Toque num horário aberto para bloqueá-lo. Toque num horário fechado para criar um "Turno Extra".</p>
+            
+            <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-3">
+                {gerarGridHorarios().map(({ hora, isAbertoPadrao, statusFinal }) => {
+                    let cores = '';
+                    let icon = null;
 
-        {/* LISTAGEM */}
-        <div className="space-y-3">
-          <h2 className="text-xs font-bold text-text-muted uppercase tracking-wider flex items-center gap-2"><Clock size={14}/> Linha do Tempo ({agendamentos.length})</h2>
-          
-          {loading ? (
-            <p className="p-10 text-center text-xs text-text-muted">Buscando sua escala...</p>
-          ) : agendamentos.length === 0 ? (
-            <p className="p-10 text-center text-xs text-text-muted bg-surface rounded-2xl border border-dashed border-border-line">Nenhum atendimento na linha do tempo para esta data.</p>
-          ) : (
-            agendamentos.map(ag => {
-              const hora = new Date(ag.data_hora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-              const isConcluido = ag.status_atendimento === 'concluido';
-              const isAusente = ag.status_atendimento === 'ausente';
-              
-              // Resolve se é um cliente logado do app ou avulso digitado pelo barbeiro
-              const nomeExibicao = ag.cliente?.nome || ag.nome_cliente_avulso || 'Cliente Avulso';
+                    if (statusFinal === 'aberto') cores = 'bg-background border-border-line text-text-base hover:border-brand';
+                    if (statusFinal === 'fechado') cores = 'bg-background/50 border-transparent text-text-muted/40 opacity-60';
+                    if (statusFinal === 'bloqueado') { cores = 'bg-red-500/10 border-red-500/30 text-red-600'; icon = <Lock size={12}/>; }
+                    if (statusFinal === 'extra') { cores = 'bg-green-500/10 border-green-500/30 text-green-600'; icon = <Unlock size={12}/>; }
 
-              return (
-                <div key={ag.id} className={`bg-surface p-4 rounded-2xl border shadow-xs flex flex-col gap-3 ${isConcluido ? 'border-green-500/20 opacity-70' : isAusente ? 'border-red-500/20 opacity-70' : 'border-border-line'}`}>
-                  <div className="flex justify-between items-start">
-                    <div className="flex items-center gap-3">
-                      <div className={`text-xs font-black p-2 rounded-xl text-white ${isConcluido ? 'bg-green-500' : isAusente ? 'bg-red-400' : 'bg-brand'}`}>{hora}</div>
-                      <div>
-                        <p className="font-bold text-sm text-text-base flex items-center gap-1"><User size={13}/> {nomeExibicao} {(!ag.cliente?.nome) && <span className="text-[9px] bg-background border px-1.5 py-0.5 rounded text-text-muted font-normal">Balcão</span>}</p>
-                        <p className="text-xs text-text-muted mt-0.5">{ag.servicos?.nome_servico} • {ag.servicos?.duracao_minutos} min</p>
-                      </div>
-                    </div>
-                    <span className="text-xs font-black text-brand">R$ {Number(ag.servicos?.preco).toFixed(2)}</span>
-                  </div>
-
-                  {ag.status_atendimento === 'agendado' && (
-                    <div className="flex gap-2 border-t border-border-line pt-3">
-                      <button onClick={() => alterarStatus(ag.id, 'ausente')} className="flex-1 bg-background border p-2 rounded-xl text-xs font-bold text-text-muted hover:text-red-500 flex items-center justify-center gap-1 cursor-pointer"><XCircle size={14}/> Faltou</button>
-                      <button onClick={() => alterarStatus(ag.id, 'concluido')} className="flex-1 bg-brand text-white p-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1 cursor-pointer"><CheckCircle2 size={14}/> Concluir</button>
-                    </div>
-                  )}
-                </div>
-              )
-            })
-          )}
-        </div>
-      </main>
-
-      {/* 🚀 MODAL: NOVO ATENDIMENTO DE BALCÃO MANUAL */}
-      {isManualModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-surface w-full max-w-sm rounded-3xl p-5 border border-border-line shadow-2xl relative">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-black text-sm text-text-base uppercase tracking-wider">Lançar Corte Manual</h3>
-              <button onClick={() => setIsManualModalOpen(false)} className="text-text-muted hover:text-text-base"><X size={18}/></button>
+                    return (
+                        <button 
+                            key={hora} 
+                            onClick={() => handleToggleHorario(hora, isAbertoPadrao)}
+                            className={`p-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex flex-col items-center gap-1 ${cores}`}
+                        >
+                            {hora}
+                            {icon}
+                        </button>
+                    )
+                })}
             </div>
-
-            <form onSubmit={handleSalvarAgendamentoManual} className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-bold text-text-muted uppercase mb-1">Nome do Cliente *</label>
-                <input required type="text" value={nomeClienteManual} onChange={(e) => setNomeClienteManual(e.target.value)} placeholder="Ex: Cliente Balcão 1" className="w-full rounded-xl bg-background border border-border-line p-2.5 text-xs text-text-base outline-none focus:border-brand" />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-text-muted uppercase mb-1">WhatsApp (Opcional)</label>
-                <input type="tel" value={whatsappClienteManual} onChange={(e) => setWhatsappClienteManual(e.target.value)} placeholder="(00) 00000-0000" className="w-full rounded-xl bg-background border border-border-line p-2.5 text-xs text-text-base outline-none focus:border-brand" />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-text-muted uppercase mb-1">Serviço Realizado *</label>
-                <select required value={servicoSelecionado} onChange={(e) => setServicoSelecionado(e.target.value)} className="w-full rounded-xl bg-background border border-border-line p-2.5 text-xs text-text-base outline-none focus:border-brand cursor-pointer">
-                  <option value="" disabled>Selecione...</option>
-                  {servicosDisponiveis.map(s => (
-                    <option key={s.id} value={s.id}>{s.nome_servico} (R$ {Number(s.preco).toFixed(2)})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-text-muted uppercase mb-1">Horário do Atendimento *</label>
-                <input required type="time" value={horaSelecionada} onChange={(e) => setHoraSelecionada(e.target.value)} className="w-full rounded-xl bg-background border border-border-line p-2.5 text-xs text-text-base outline-none focus:border-brand" />
-              </div>
-
-              <button type="submit" className="w-full bg-brand text-white font-bold p-3 rounded-xl text-xs transition-colors shadow-xs cursor-pointer">Concluir & Lançar no Caixa</button>
-            </form>
-          </div>
         </div>
       )}
 
+      {/* TELA DE AGENDA (LISTA DE CLIENTES) */}
+      {tab === 'agenda' && (
+        <div className="space-y-4 animate-fadeIn">
+            {loading ? (
+                <div className="text-center py-10"><div className="h-8 w-8 border-4 border-brand border-t-transparent rounded-full animate-spin mx-auto"></div></div>
+            ) : agendamentos.length === 0 ? (
+                <div className="text-center py-16 bg-surface border border-border-line rounded-3xl">
+                    <Calendar size={32} className="mx-auto mb-4 text-text-muted" />
+                    <h3 className="font-bold text-lg text-text-base mb-1">Agenda Livre</h3>
+                    <p className="text-sm text-text-muted">Nenhum cliente marcado.</p>
+                </div>
+            ) : (
+                agendamentos.map((ag) => (
+                    <div key={ag.id} className="bg-surface p-5 rounded-2xl border border-border-line">
+                        <div className="flex justify-between items-center mb-4 pb-3 border-b border-border-line/50">
+                            <span className="font-black text-xl">{new Date(ag.data_hora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span className="text-[10px] font-black uppercase tracking-wider px-3 py-1 bg-brand/10 text-brand rounded-full">{ag.status_atendimento}</span>
+                        </div>
+                        <div className="mb-4">
+                            <p className="font-bold text-text-base flex items-center gap-2"><User size={16}/> {ag.nome_cliente_avulso || ag.usuarios?.nome || 'Cliente'}</p>
+                            <p className="text-sm text-text-muted flex items-center gap-2 mt-1"><Scissors size={16}/> {ag.servicos?.nome_servico}</p>
+                        </div>
+                        {ag.status_atendimento === 'agendado' && (
+                            <div className="grid grid-cols-2 gap-3">
+                                <button onClick={() => atualizarStatusAgendamento(ag.id, 'concluido')} className="bg-brand text-white p-3 rounded-xl font-bold text-xs cursor-pointer flex items-center justify-center gap-2"><CheckCircle2 size={16}/> Concluído</button>
+                                <button onClick={() => atualizarStatusAgendamento(ag.id, 'ausente')} className="bg-background border border-border-line p-3 rounded-xl font-bold text-xs cursor-pointer flex items-center justify-center gap-2 text-text-muted hover:text-amber-600"><AlertCircle size={16}/> Faltou</button>
+                            </div>
+                        )}
+                    </div>
+                ))
+            )}
+        </div>
+      )}
     </div>
   );
 }

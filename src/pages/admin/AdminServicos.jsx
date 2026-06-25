@@ -1,23 +1,29 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabaseClient';
-import { Scissors, Plus, Trash2, Clock, Check } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { useModal } from '../../context/ModalContext';
+import { Scissors, Plus, Edit2, Trash2, Clock, DollarSign, X } from 'lucide-react';
 
 export default function AdminServicos() {
   const { profile } = useAuth();
+  const { showAlert, showConfirm } = useModal();
   
   const [servicos, setServicos] = useState([]);
   const [loading, setLoading] = useState(true);
-
+  
+  // Controle da Modal Interna
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  
   // Estados do Formulário
-  const [novoServicoNome, setNovoServicoNome] = useState('');
-  const [novoServicoPreco, setNovoServicoPreco] = useState('');
-  const [novoServicoDuracao, setNovoServicoDuracao] = useState('30');
+  const [idEditando, setIdEditando] = useState(null);
+  const [nome, setNome] = useState('');
+  const [descricao, setDescricao] = useState('');
+  const [preco, setPreco] = useState(''); // O preço agora guarda a string formatada "0,00"
+  const [duracao, setDuracao] = useState('30');
 
   useEffect(() => {
-    if (profile?.barbearia_id) {
-      buscarServicos();
-    }
+    if (profile?.barbearia_id) buscarServicos();
   }, [profile]);
 
   const buscarServicos = async () => {
@@ -32,170 +38,232 @@ export default function AdminServicos() {
       if (error) throw error;
       setServicos(data || []);
     } catch (err) {
-      console.error('Erro ao buscar serviços:', err.message);
+      showAlert('Erro', 'Não foi possível carregar os serviços.', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAdicionarServico = async (e) => {
+  // ✨ Função da Máscara de Moeda (Real Brasileiro)
+  const handlePrecoChange = (e) => {
+    let valor = e.target.value.replace(/\D/g, ''); // Remove tudo que não é número
+    
+    if (!valor) {
+        setPreco('');
+        return;
+    }
+
+    // Converte para decimal (dividindo por 100)
+    const valorNumerico = parseInt(valor, 10) / 100;
+    
+    // Formata para o padrão Brasileiro (ex: 1.250,00)
+    const valorFormatado = valorNumerico.toLocaleString('pt-BR', { 
+        minimumFractionDigits: 2, 
+        maximumFractionDigits: 2 
+    });
+    
+    setPreco(valorFormatado);
+  };
+
+  const abrirFormulario = (servico = null) => {
+    if (servico) {
+      setIdEditando(servico.id);
+      setNome(servico.nome_servico);
+      setDescricao(servico.descricao || '');
+      setDuracao(servico.duracao_minutos.toString());
+      // Formata o preço que vem do banco (ex: 35.5) para a máscara (35,50)
+      setPreco(parseFloat(servico.preco).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    } else {
+      setIdEditando(null);
+      setNome('');
+      setDescricao('');
+      setPreco('');
+      setDuracao('30');
+    }
+    setIsFormOpen(true);
+  };
+
+  const fecharFormulario = () => {
+    setIsFormOpen(false);
+    setIdEditando(null);
+  };
+
+  const salvarServico = async (e) => {
     e.preventDefault();
-    if (!novoServicoNome || !novoServicoPreco) return;
+    setIsSaving(true);
+
+    // ✨ Converte o preço formatado (ex: "1.250,50") de volta para número do banco (1250.50)
+    const precoNumericoDB = preco ? parseFloat(preco.replace(/\./g, '').replace(',', '.')) : 0;
+
+    const servicoData = {
+      barbearia_id: profile.barbearia_id,
+      nome_servico: nome,
+      descricao: descricao,
+      preco: precoNumericoDB,
+      duracao_minutos: parseInt(duracao)
+    };
 
     try {
-      const { error } = await supabase.from('servicos').insert([
-        {
-          barbearia_id: profile.barbearia_id,
-          nome_servico: novoServicoNome,
-          preco: parseFloat(novoServicoPreco),
-          duracao_minutos: parseInt(novoServicoDuracao)
-        }
-      ]);
-
-      if (error) throw error;
-
-      // Limpa os campos após salvar
-      setNovoServicoNome('');
-      setNovoServicoPreco('');
-      setNovoServicoDuracao('30');
+      if (idEditando) {
+        const { error } = await supabase.from('servicos').update(servicoData).eq('id', idEditando);
+        if (error) throw error;
+        showAlert('Sucesso!', 'Serviço atualizado com sucesso.', 'success');
+      } else {
+        const { error } = await supabase.from('servicos').insert([servicoData]);
+        if (error) throw error;
+        showAlert('Sucesso!', 'Novo serviço adicionado à sua barbearia.', 'success');
+      }
       
+      fecharFormulario();
       buscarServicos();
-      alert('Serviço cadastrado com sucesso!');
     } catch (err) {
-      alert('Erro ao cadastrar serviço: ' + err.message);
+      showAlert('Erro', err.message, 'error');
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const handleDeletarServico = async (id) => {
-    if (!confirm('Tem certeza de que deseja remover este serviço? Ele deixará de aparecer no aplicativo dos clientes.')) return;
-    
-    try {
-      const { error } = await supabase.from('servicos').delete().eq('id', id);
-      if (error) throw error;
-      
-      buscarServicos();
-    } catch (err) {
-      alert('Erro ao deletar: ' + err.message);
-    }
+  const excluirServico = (id, nomeServico) => {
+    showConfirm(
+      'Excluir Serviço?', 
+      `Tem a certeza que deseja remover "${nomeServico}"? Esta ação não pode ser desfeita.`, 
+      async () => {
+        try {
+          const { error } = await supabase.from('servicos').delete().eq('id', id);
+          if (error) throw error;
+          
+          setServicos(prev => prev.filter(s => s.id !== id));
+          showAlert('Removido', 'O serviço foi excluído.', 'success');
+        } catch (err) {
+          showAlert('Erro', 'Não foi possível excluir o serviço.', 'error');
+        }
+      }
+    );
   };
 
   return (
-    <div className="p-6 md:p-10">
-      <header className="mb-8">
-        <h1 className="text-2xl font-bold text-text-base">Serviços & Preços</h1>
-        <p className="text-sm text-text-muted">Monte o seu catálogo de cortes e defina os tempos de atendimento.</p>
-      </header>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* COLUNA 1: Formulário de Cadastro */}
-        <div className="bg-surface p-6 rounded-2xl border border-border-line shadow-sm h-fit">
-          <h2 className="text-lg font-bold mb-6 flex items-center gap-2 text-text-base">
-            <Plus size={20} className="text-brand" /> Novo Serviço
-          </h2>
-          
-          <form onSubmit={handleAdicionarServico} className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-text-muted uppercase mb-1">Nome do Serviço</label>
-              <input 
-                required 
-                type="text" 
-                value={novoServicoNome} 
-                onChange={(e) => setNovoServicoNome(e.target.value)} 
-                className="w-full rounded-xl bg-background border border-border-line p-3 text-sm outline-none focus:border-brand text-text-base" 
-                placeholder="Ex: Corte Degradê" 
-              />
-            </div>
-            
-            <div>
-              <label className="block text-xs font-bold text-text-muted uppercase mb-1">Preço (R$)</label>
-              <input 
-                required 
-                type="number" 
-                step="0.01" 
-                min="0"
-                value={novoServicoPreco} 
-                onChange={(e) => setNovoServicoPreco(e.target.value)} 
-                className="w-full rounded-xl bg-background border border-border-line p-3 text-sm outline-none focus:border-brand text-text-base" 
-                placeholder="Ex: 45.00" 
-              />
-            </div>
-            
-            <div>
-              <label className="block text-xs font-bold text-text-muted uppercase mb-1">Duração Estimada</label>
-              <select 
-                value={novoServicoDuracao} 
-                onChange={(e) => setNovoServicoDuracao(e.target.value)} 
-                className="w-full rounded-xl bg-background border border-border-line p-3 text-sm outline-none focus:border-brand text-text-base cursor-pointer"
-              >
-                <option value="15">15 minutos</option>
-                <option value="30">30 minutos</option>
-                <option value="45">45 minutos</option>
-                <option value="60">1 hora</option>
-                <option value="90">1 hora e 30 min</option>
-                <option value="120">2 horas</option>
-              </select>
-            </div>
-            
-            <div className="pt-2">
-              <button 
-                type="submit" 
-                className="w-full bg-brand hover:bg-brand-hover text-white font-bold p-3 rounded-xl text-sm transition-colors shadow-sm cursor-pointer flex items-center justify-center gap-2"
-              >
-                <Check size={18} /> Cadastrar Serviço
-              </button>
-            </div>
-          </form>
+    <div className="p-6 md:p-10 max-w-5xl mx-auto mb-20 relative h-full">
+      
+      {/* CABEÇALHO */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+        <div>
+          <h1 className="text-2xl font-black text-text-base">Serviços</h1>
+          <p className="text-sm text-text-muted mt-1">Gerencie os cortes e serviços oferecidos pela barbearia.</p>
         </div>
-
-        {/* COLUNA 2: Lista de Serviços Ativos */}
-        <div className="lg:col-span-2 bg-surface rounded-2xl border border-border-line shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-border-line bg-surface">
-            <h2 className="text-lg font-bold flex items-center gap-2 text-text-base">
-              <Scissors size={20} className="text-brand" /> Catálogo Ativo
-            </h2>
-          </div>
-          
-          {loading ? (
-            <p className="p-10 text-center text-text-muted text-sm">Carregando catálogo...</p>
-          ) : servicos.length === 0 ? (
-            <div className="p-10 text-center flex flex-col items-center">
-              <div className="bg-background p-4 rounded-full text-text-muted mb-3">
-                <Scissors size={32} />
-              </div>
-              <p className="text-text-base font-bold">Nenhum serviço cadastrado</p>
-              <p className="text-sm text-text-muted mt-1">Adicione o seu primeiro corte usando o formulário ao lado.</p>
-            </div>
-          ) : (
-            <ul className="divide-y divide-border-line">
-              {servicos.map((servico) => (
-                <li key={servico.id} className="p-6 flex justify-between items-center hover:bg-background transition-colors group">
-                  <div>
-                    <p className="font-bold text-sm text-text-base">{servico.nome_servico}</p>
-                    <p className="text-xs text-text-muted flex items-center gap-1 mt-1">
-                      <Clock size={12}/> {servico.duracao_minutos} minutos
-                    </p>
-                  </div>
-                  
-                  <div className="flex items-center gap-6">
-                    <span className="font-extrabold text-brand text-base">
-                      R$ {Number(servico.preco).toFixed(2)}
-                    </span>
-                    <button 
-                      onClick={() => handleDeletarServico(servico.id)} 
-                      className="text-text-muted hover:text-red-500 p-2 rounded-lg hover:bg-red-50 transition-colors cursor-pointer opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
-                      title="Excluir Serviço"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
+        <button onClick={() => abrirFormulario()} className="flex items-center gap-2 bg-brand text-white px-5 py-2.5 rounded-xl font-bold hover:bg-brand-hover transition-colors shadow-lg shadow-brand/20 cursor-pointer">
+          <Plus size={18} /> Novo Serviço
+        </button>
       </div>
+
+      {/* LISTAGEM DE SERVIÇOS */}
+      {loading ? (
+        <div className="flex justify-center py-20">
+          <div className="h-8 w-8 border-4 border-brand border-t-transparent rounded-full animate-spin"></div>
+        </div>
+      ) : servicos.length === 0 ? (
+        <div className="text-center py-20 bg-surface border border-border-line rounded-3xl">
+          <div className="mx-auto h-16 w-16 bg-background rounded-full flex items-center justify-center text-text-muted mb-4">
+            <Scissors size={32} />
+          </div>
+          <h3 className="text-lg font-bold text-text-base mb-1">Nenhum serviço cadastrado</h3>
+          <p className="text-sm text-text-muted">Adicione o seu primeiro corte ou serviço para começar a receber agendamentos.</p>
+        </div>
+      ) : (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {servicos.map((servico) => (
+            <div key={servico.id} className="bg-surface border border-border-line rounded-2xl p-5 hover:border-brand/30 transition-colors group">
+              <div className="flex justify-between items-start mb-3">
+                <div className="p-2 bg-brand/10 text-brand rounded-lg">
+                  <Scissors size={20} />
+                </div>
+                <div className="flex items-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => abrirFormulario(servico)} className="p-2 text-text-muted hover:text-brand hover:bg-brand/10 rounded-lg transition-colors cursor-pointer" title="Editar"><Edit2 size={16} /></button>
+                  <button onClick={() => excluirServico(servico.id, servico.nome_servico)} className="p-2 text-text-muted hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer" title="Excluir"><Trash2 size={16} /></button>
+                </div>
+              </div>
+              
+              <h3 className="font-bold text-lg text-text-base leading-tight mb-1">{servico.nome_servico}</h3>
+              {servico.descricao && <p className="text-xs text-text-muted line-clamp-2 mb-4">{servico.descricao}</p>}
+              
+              <div className="flex items-center gap-4 mt-4 pt-4 border-t border-border-line/50">
+                <div className="flex items-center gap-1.5 text-sm font-semibold text-text-base">
+                  <DollarSign size={16} className="text-green-500" />
+                  R$ {parseFloat(servico.preco).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                <div className="flex items-center gap-1.5 text-sm text-text-muted">
+                  <Clock size={16} />
+                  {servico.duracao_minutos} min
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* MODAL / PAINEL LATERAL PARA CRIAR/EDITAR */}
+      {isFormOpen && (
+        <div className="fixed inset-0 z-[100] flex justify-end bg-black/40 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-surface w-full max-w-md h-full shadow-2xl flex flex-col animate-slideInRight">
+            
+            <div className="flex items-center justify-between p-6 border-b border-border-line">
+              <h2 className="text-xl font-black">{idEditando ? 'Editar Serviço' : 'Novo Serviço'}</h2>
+              <button onClick={fecharFormulario} className="p-2 text-text-muted hover:bg-background rounded-full transition-colors cursor-pointer"><X size={20} /></button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              <form id="form-servico" onSubmit={salvarServico} className="space-y-5">
+                <div>
+                  <label className="block text-xs font-bold text-text-muted uppercase mb-1">Nome do Serviço *</label>
+                  <input required type="text" value={nome} onChange={(e) => setNome(e.target.value)} className="w-full rounded-xl bg-background border border-border-line p-3 text-sm focus:border-brand outline-none" placeholder="Ex: Corte Degrade" />
+                </div>
+                
+                <div>
+                  <label className="block text-xs font-bold text-text-muted uppercase mb-1">Descrição</label>
+                  <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} rows="3" className="w-full rounded-xl bg-background border border-border-line p-3 text-sm focus:border-brand outline-none resize-none" placeholder="Detalhes opcionais sobre o serviço..." />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-text-muted uppercase mb-1 flex items-center gap-1">Preço (R$) *</label>
+                    <input 
+                      required 
+                      type="text" 
+                      value={preco} 
+                      onChange={handlePrecoChange} 
+                      className="w-full rounded-xl bg-background border border-border-line p-3 text-sm focus:border-brand outline-none" 
+                      placeholder="0,00" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-text-muted uppercase mb-1 flex items-center gap-1">Duração *</label>
+                    <select required value={duracao} onChange={(e) => setDuracao(e.target.value)} className="w-full rounded-xl bg-background border border-border-line p-3 text-sm focus:border-brand outline-none">
+                      <option value="15">15 Minutos</option>
+                      <option value="30">30 Minutos</option>
+                      <option value="45">45 Minutos</option>
+                      <option value="60">1 Hora</option>
+                      <option value="90">1h 30m</option>
+                      <option value="120">2 Horas</option>
+                    </select>
+                  </div>
+                </div>
+              </form>
+            </div>
+
+            <div className="p-6 border-t border-border-line bg-background">
+              <div className="flex gap-3">
+                <button type="button" onClick={fecharFormulario} className="flex-1 px-4 py-3 rounded-xl border border-border-line font-bold text-text-base hover:bg-surface transition-colors cursor-pointer">
+                  Cancelar
+                </button>
+                <button type="submit" form="form-servico" disabled={isSaving} className="flex-1 px-4 py-3 rounded-xl bg-brand text-white font-bold hover:bg-brand-hover transition-colors shadow-md flex justify-center items-center cursor-pointer">
+                  {isSaving ? <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : 'Salvar Serviço'}
+                </button>
+              </div>
+            </div>
+            
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -135,14 +135,8 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
 
       const userId = authData.user?.id;
       if (userId) {
-        const { data: profile } = await supabase.from('usuarios').select('role').eq('id', userId).single();
         onClose(); 
-        
-        if (profile) {
-          if (profile.role === 'admin' || profile.role === 'gerente') navigate('/admin');
-          else if (profile.role === 'funcionario') navigate('/barbeiro');
-          else navigate('/agendamento');
-        }
+        navigate('/'); 
       }
     } catch (err) {
       setError(err.message);

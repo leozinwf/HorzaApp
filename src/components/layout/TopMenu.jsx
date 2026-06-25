@@ -1,6 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Scissors, LogOut, LayoutDashboard, LogIn, User, Calendar, Home } from 'lucide-react';
+import { Scissors, LogOut, LayoutDashboard, LogIn, Calendar, Home, Clock } from 'lucide-react';
 
 export default function TopMenu({ onOpenLogin }) {
   const { user, profile, logout } = useAuth();
@@ -12,6 +12,7 @@ export default function TopMenu({ onOpenLogin }) {
   };
 
   const isAdminOuGerente = profile?.role === 'admin' || profile?.role === 'gerente';
+  const isFuncionario = profile?.role === 'funcionario'; // ✨ Verificação adicionada
 
   return (
     <header className="bg-surface/80 backdrop-blur-md border-b border-border-line px-6 py-3 flex items-center justify-between sticky top-0 z-50 shadow-sm transition-all">
@@ -32,9 +33,23 @@ export default function TopMenu({ onOpenLogin }) {
         <Link to="/agendar" className="flex items-center gap-2 px-4 py-2 rounded-lg text-text-muted hover:text-brand hover:bg-brand/5 text-sm font-medium transition-all">
           <Calendar size={16} /> Agendar
         </Link>
+        
+        {/* BOTÃO DO ADMIN */}
+        {user && isAdminOuGerente && (
+          <Link to="/admin" className="flex items-center gap-2 px-4 py-2 rounded-lg text-brand bg-brand/5 hover:bg-brand/10 border border-brand/20 text-sm font-bold transition-all ml-2 shadow-sm">
+            <LayoutDashboard size={16} /> Painel Admin
+          </Link>
+        )}
+
+        {/* ✨ BOTÃO DO BARBEIRO (FUNCIONÁRIO) ✨ */}
+        {user && isFuncionario && (
+          <Link to="/barbeiro" className="flex items-center gap-2 px-4 py-2 rounded-lg text-brand bg-brand/5 hover:bg-brand/10 border border-brand/20 text-sm font-bold transition-all ml-2 shadow-sm">
+            <Clock size={16} /> Minha Agenda
+          </Link>
+        )}
       </nav>
 
-      {/* ESPAÇADOR FLEXÍVEL (Empurra a conta para a direita) */}
+      {/* ESPAÇADOR FLEXÍVEL */}
       <div className="flex-grow" />
 
       {/* ÁREA DE CONTA E IDENTIDADE */}
