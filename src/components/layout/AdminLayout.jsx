@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, Scissors, Package, DollarSign, Building2, CalendarDays } from 'lucide-react';
+import { LayoutDashboard, Users, Scissors, Package, DollarSign, Building2, CalendarDays, ShieldCheck, CreditCard } from 'lucide-react';
 
 export default function AdminLayout() {
   const location = useLocation();
@@ -8,8 +8,10 @@ export default function AdminLayout() {
     { path: '/admin', icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
     { path: '/admin/agenda', icon: <CalendarDays size={18} />, label: 'Agenda Geral' }, // ✨ Novo Botão
     { path: '/admin/equipe', icon: <Users size={18} />, label: 'Equipe' },
+    { path: '/admin/permissoes', icon: <ShieldCheck size={18} />, label: 'Permissões' },
     { path: '/admin/servicos', icon: <Scissors size={18} />, label: 'Serviços' },
     { path: '/admin/estoque', icon: <Package size={18} />, label: 'Estoque' },
+    { path: '/admin/pagamentos', icon: <CreditCard size={18} />, label: 'Pagamentos' },
     { path: '/admin/financeiro', icon: <DollarSign size={18} />, label: 'Financeiro' },
     { path: '/admin/empresa', icon: <Building2 size={18} />, label: 'Empresa' },
   ];

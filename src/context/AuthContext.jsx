@@ -8,6 +8,13 @@ export const AuthProvider = ({ children }) => {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Função auxiliar para injetar a cor no CSS
+  const aplicarCorDaBarbearia = (corHex) => {
+    if (corHex) {
+      document.documentElement.style.setProperty('--color-brand', corHex);
+    }
+  };
+
   useEffect(() => {
     // 1. Carrega a sessão inicial assim que a aplicação abre
     const initializeAuth = async () => {
@@ -48,16 +55,33 @@ export const AuthProvider = ({ children }) => {
   // 3. Função dedicada para buscar o Perfil com base no ID
   const fetchProfile = async (userId) => {
     try {
-      const { data, error } = await supabase
+      // Vai buscar os dados do utilizador
+      const { data: userData, error: userError } = await supabase
         .from('usuarios')
         .select('*')
         .eq('id', userId)
         .single();
       
-      if (error) throw error;
-      setProfile(data);
+      if (userError) throw userError;
+      setProfile(userData);
+
+      // --- INÍCIO DA ALTERAÇÃO: Whitelabel (Cores Dinâmicas) ---
+      // Se o utilizador estiver associado a uma barbearia, vai buscar a cor
+      if (userData?.barbearia_id) {
+        const { data: barbeariaData, error: barbeariaError } = await supabase
+          .from('barbearias')
+          .select('cor_primaria')
+          .eq('id', userData.barbearia_id)
+          .single();
+
+        if (!barbeariaError && barbeariaData?.cor_primaria) {
+          aplicarCorDaBarbearia(barbeariaData.cor_primaria);
+        }
+      }
+      // --- FIM DA ALTERAÇÃO ---
+
     } catch (error) {
-      console.error('Erro ao buscar o perfil do usuário:', error.message);
+      console.error('Erro ao buscar o perfil do utilizador:', error.message);
       setProfile(null);
     } finally {
       setLoading(false);
@@ -70,6 +94,10 @@ export const AuthProvider = ({ children }) => {
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
+    
+    // Repõe a cor padrão do sistema (Laranja) ao fazer logout
+    aplicarCorDaBarbearia('#f59e0b'); 
+    
     setLoading(false);
   };
 

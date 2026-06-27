@@ -9,8 +9,8 @@ import AgendamentoCliente from './pages/client/AgendamentoCliente';
 import AreaCliente from './pages/client/AreaCliente';
 import AgendaBarbeiro from './pages/barber/AgendaBarbeiro';
 
-import TopMenu from './components/layout/TopMenu';
-import BottomMenu from './components/layout/BottomMenu';
+// ✨ Importando o novo menu unificado
+import MenuNavegacao from './components/layout/MenuNavegacao';
 import AdminLayout from './components/layout/AdminLayout';
 import LoginModal from './components/modals/LoginModal';
 
@@ -21,6 +21,9 @@ import AdminServicos from './pages/admin/AdminServicos';
 import AdminEstoque from './pages/admin/AdminEstoque';
 import AdminFinanceiro from './pages/admin/AdminFinanceiro';
 import AdminAgendaEquipe from './pages/admin/AdminAgendaEquipe';
+import AdminPermissoes from './pages/admin/AdminPermissoes';
+import AdminPagamentos from './pages/admin/AdminPagamentos';
+import StripeCallback from './pages/admin/StripeCallback';
 
 function ProtectedRoute({ children, allowedRoles }) {
   const { user, profile, loading } = useAuth();
@@ -68,13 +71,17 @@ function AppContent() {
 
   return (
     <>
-      {/* Menu do topo aparece sempre agora */}
-      <TopMenu onOpenLogin={openLogin} />
+      {/* ✨ Novo Menu Unificado que lida sozinho com o layout Mobile/PC */}
+      <MenuNavegacao onOpenLogin={openLogin} />
       
-      {/* O padding-top compensa a barra fixa do TopMenu e o BottomMenu no mobile */}
-      <main className="pb-16 md:pb-0 min-h-screen bg-background pt-[72px]">
+      {/* 
+        Ajuste do main: 
+        - pb-24: Garante que o menu mobile inferior não cubra o conteúdo final da página
+        - md:pb-0: No PC, remove o padding inferior (pois o menu está no topo)
+      */}
+      <main className="pb-24 md:pb-0 min-h-screen bg-background">
         <Routes>
-          <Route path="/" element={<HomeCliente />} />
+          <Route path="/" element={<HomeCliente onOpenLogin={openLogin} />} />
           <Route path="/agendar" element={<AgendamentoCliente onOpenLogin={openLogin} />} />
           <Route path="/area-cliente" element={<ProtectedRoute allowedRoles={['cliente', 'admin', 'gerente', 'funcionario']}><AreaCliente /></ProtectedRoute>} />
           <Route path="/barbeiro" element={<ProtectedRoute allowedRoles={['funcionario', 'gerente', 'admin']}><AgendaBarbeiro /></ProtectedRoute>} />
@@ -85,17 +92,16 @@ function AppContent() {
             <Route path="agenda" element={<AdminAgendaEquipe />} />
             <Route path="servicos" element={<AdminServicos />} />
             <Route path="estoque" element={<AdminEstoque />} />
+            <Route path="pagamentos" element={<AdminPagamentos />} />
+            <Route path="pagamentos/callback" element={<StripeCallback />} />
             <Route path="empresa" element={<AdminEmpresa />} />
             <Route path="financeiro" element={<AdminFinanceiro />} />
+            <Route path="permissoes" element={<AdminPermissoes />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
-
-      <div className="md:hidden">
-        <BottomMenu onOpenLogin={openLogin} />
-      </div>
 
       <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} initialMode={loginModalMode} />
     </>

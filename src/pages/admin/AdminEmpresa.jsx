@@ -222,15 +222,6 @@ export default function AdminEmpresa() {
                     </div>
                 </div>
 
-                {/* 4. DADOS BANCÁRIOS / PIX */}
-                <div className="bg-surface p-6 md:p-8 rounded-2xl border border-border-line shadow-sm">
-                    <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><DollarSign size={20} className="text-brand" /> Recebimentos</h3>
-                    <div>
-                        <label className="block text-xs font-bold text-text-muted uppercase mb-2">Chave PIX Oficial da Barbearia</label>
-                        <input type="text" value={chavePix} onChange={(e) => setChavePix(e.target.value)} className="w-full rounded-xl bg-background border border-border-line p-3 text-sm focus:border-brand outline-none" placeholder="CNPJ, E-mail, Telefone ou Chave Aleatória" />
-                    </div>
-                </div>
-
                 <div className="sticky bottom-24 md:bottom-8 z-10 flex justify-end">
                     <button type="submit" disabled={saving} className="bg-brand hover:bg-brand-hover text-white font-bold px-8 py-4 rounded-xl cursor-pointer shadow-xl shadow-brand/20 transition-all flex items-center gap-2">
                         <Save size={20} /> {saving ? 'A Guardar as Alterações...' : 'Guardar Todas as Configurações'}
