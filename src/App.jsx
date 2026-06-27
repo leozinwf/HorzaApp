@@ -9,7 +9,6 @@ import AgendamentoCliente from './pages/client/AgendamentoCliente';
 import AreaCliente from './pages/client/AreaCliente';
 import AgendaBarbeiro from './pages/barber/AgendaBarbeiro';
 
-// ✨ Importando o novo menu unificado
 import MenuNavegacao from './components/layout/MenuNavegacao';
 import AdminLayout from './components/layout/AdminLayout';
 import LoginModal from './components/modals/LoginModal';
@@ -23,6 +22,7 @@ import AdminFinanceiro from './pages/admin/AdminFinanceiro';
 import AdminAgendaEquipe from './pages/admin/AdminAgendaEquipe';
 import AdminPermissoes from './pages/admin/AdminPermissoes';
 import AdminPagamentos from './pages/admin/AdminPagamentos';
+import AdminFidelidade from './pages/admin/AdminFidelidade';
 import StripeCallback from './pages/admin/StripeCallback';
 
 function ProtectedRoute({ children, allowedRoles }) {
@@ -97,6 +97,7 @@ function AppContent() {
             <Route path="empresa" element={<AdminEmpresa />} />
             <Route path="financeiro" element={<AdminFinanceiro />} />
             <Route path="permissoes" element={<AdminPermissoes />} />
+            <Route path="fidelidade" element={<AdminFidelidade />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
