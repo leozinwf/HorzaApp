@@ -23,6 +23,7 @@ import AdminAgendaEquipe from './pages/admin/AdminAgendaEquipe';
 import AdminPermissoes from './pages/admin/AdminPermissoes';
 import AdminPagamentos from './pages/admin/AdminPagamentos';
 import AdminFidelidade from './pages/admin/AdminFidelidade';
+import AdminUsuarios from './pages/admin/AdminUsuarios';
 import StripeCallback from './pages/admin/StripeCallback';
 
 function ProtectedRoute({ children, allowedRoles }) {
@@ -89,6 +90,7 @@ function AppContent() {
           <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin', 'gerente']}><AdminLayout /></ProtectedRoute>}>
             <Route index element={<DashboardAdmin />} />
             <Route path="equipe" element={<AdminEquipe />} />
+            <Route path="usuarios" element={<AdminUsuarios />} />
             <Route path="agenda" element={<AdminAgendaEquipe />} />
             <Route path="servicos" element={<AdminServicos />} />
             <Route path="estoque" element={<AdminEstoque />} />
