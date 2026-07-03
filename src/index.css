@@ -1,25 +1,116 @@
 @import "tailwindcss";
 
 @theme {
-  /* Cores Globais do App */
-  --color-brand: #f59e0b;        /* O laranja/ambar principal (amber-500) */
-  --color-brand-hover: #fbbf24;  /* Laranja mais claro para o hover */
-  
-  --color-background: #f8fafc;   /* Fundo geral da página (slate-50) */
-  --color-surface: #ffffff;      /* Fundo de cartões e painéis (white) */
-  
-  --color-text-base: #0f172a;    /* Texto principal escuro (slate-900) */
-  --color-text-muted: #64748b;   /* Texto secundário/cinza (slate-500) */
-  
-  --color-border-line: #e2e8f0;  /* Bordas sutis (slate-200) */
+  --color-brand: #c89b3c;
+
+  --color-background: #f5f2eb;
+  --color-surface: #ffffff;
+  --color-surface-secondary: #ebe4d7;
+
+  --color-text-base: #2b241b;
+  --color-text-muted: #6b6257;
+
+  --color-border-line: #d9d0c2;
 }
 
-/* Garante que o fundo do app sempre respeite a variável base */
+@layer utilities {
+  .bg-menu {
+    background-color: var(--menu-background);
+  }
+}
+
+@variant dark (&:where(.dark, .dark *));
+
+:root {
+  /* Backgrounds */
+  --background: #f5f2eb;
+  --surface: #ffffff;
+  --surface-secondary: #f5f2eb;
+  --menu-background: #f5f2eb;
+
+  /* Text */
+  --text-base: #2b241b;
+  --text-muted: #6b6257;
+
+  /* Borders */
+  --border-line: #d9d0c2;
+
+  /* Accent */
+--brand: #B8924A;
+
+  /* Status */
+  --success: #3fa76f;
+  --danger: #d45b5b;
+  --warning: #c89b3c;
+}
+
+.dark {
+  /* Backgrounds */
+  --background: #151311;
+  --surface: #211d19;
+  --surface-secondary: #2d2722;
+  --menu-background: #1d1916;
+
+  /* Text */
+  --text-base: #f5f1ea;
+  --text-muted: #b8aa99;
+
+  /* Borders */
+  --border-line: #3b342d;
+
+  /* Accent */
+--brand: #B8924A;
+  /* Status */
+  --success: #57c087;
+  --danger: #ef7a7a;
+  --warning: #d8b25a;
+}
+
+html {
+  color-scheme: light dark;
+}
+
 body {
-  background-color: var(--color-background);
-  color: var(--color-text-base);
+  background: var(--background);
+  color: var(--text-base);
+  transition: .25s ease;
 }
 
-.pb-safe {
-  padding-bottom: env(safe-area-inset-bottom);
+@layer utilities {
+
+  .bg-background {
+    background: var(--background);
+  }
+
+  .bg-surface {
+    background: var(--surface);
+  }
+
+  .bg-surface-secondary {
+    background: var(--surface-secondary);
+  }
+
+  .text-text-base {
+    color: var(--text-base);
+  }
+
+  .text-text-muted {
+    color: var(--text-muted);
+  }
+
+  .border-border-line {
+    border-color: var(--border-line);
+  }
+
+  .bg-brand {
+    background: var(--brand);
+  }
+
+  .text-brand {
+    color: var(--brand);
+  }
+
+  .border-brand {
+    border-color: var(--brand);
+  }
 }

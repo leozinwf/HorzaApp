@@ -4,15 +4,23 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ModalProvider } from './context/ModalContext';
 import { supabase } from './services/supabaseClient';
 
-import HomeCliente from './pages/client/HomeCliente';
-import AgendamentoCliente from './pages/client/AgendamentoCliente';
-import AreaCliente from './pages/client/AreaCliente';
-import AgendaBarbeiro from './pages/barber/AgendaBarbeiro';
-
+// --- Imports de Layout e Modais ---
 import MenuNavegacao from './components/layout/MenuNavegacao';
 import AdminLayout from './components/layout/AdminLayout';
 import LoginModal from './components/modals/LoginModal';
+import SuperAdminRoute from './components/layout/SuperAdminRoute';
 
+// --- Imports das Páginas do Cliente/Marketplace ---
+import HomeMarketplace from './pages/client/HomeMarketplace';
+import HomeCliente from './pages/client/HomeCliente';
+import AgendamentoCliente from './pages/client/AgendamentoCliente';
+import AreaCliente from './pages/client/AreaCliente';
+
+// --- Imports das Páginas do Barbeiro ---
+import AgendaBarbeiro from './pages/barber/AgendaBarbeiro';
+
+// --- Imports das Páginas de Admin ---
+import DashboardMaster from './pages/admin/DashboardMaster';
 import DashboardAdmin from './pages/admin/DashboardAdmin';
 import AdminEquipe from './pages/admin/AdminEquipe';
 import AdminEmpresa from './pages/admin/AdminEmpresa';
@@ -26,6 +34,7 @@ import AdminFidelidade from './pages/admin/AdminFidelidade';
 import AdminUsuarios from './pages/admin/AdminUsuarios';
 import StripeCallback from './pages/admin/StripeCallback';
 
+// Componente para proteger rotas normais
 function ProtectedRoute({ children, allowedRoles }) {
   const { user, profile, loading } = useAuth();
 
@@ -72,22 +81,26 @@ function AppContent() {
 
   return (
     <>
-      {/* ✨ Novo Menu Unificado que lida sozinho com o layout Mobile/PC */}
       <MenuNavegacao onOpenLogin={openLogin} />
       
-      {/* 
-        Ajuste do main: 
-        - pb-24: Garante que o menu mobile inferior não cubra o conteúdo final da página
-        - md:pb-0: No PC, remove o padding inferior (pois o menu está no topo)
-      */}
       <main className="pb-24 md:pb-0 min-h-screen bg-background">
         <Routes>
-          <Route path="/" element={<HomeCliente onOpenLogin={openLogin} />} />
-          <Route path="/agendar" element={<AgendamentoCliente onOpenLogin={openLogin} />} />
-          <Route path="/area-cliente" element={<ProtectedRoute allowedRoles={['cliente', 'admin', 'gerente', 'funcionario']}><AreaCliente /></ProtectedRoute>} />
-          <Route path="/barbeiro" element={<ProtectedRoute allowedRoles={['funcionario', 'gerente', 'admin']}><AgendaBarbeiro /></ProtectedRoute>} />
+          {/* ✨ Rota Principal: Marketplace (Busca por localização) */}
+          <Route path="/" element={<HomeMarketplace />} />
+          
+          {/* ✨ Rota Super Admin (Protegida) */}
+          <Route path="/master" element={<SuperAdminRoute><DashboardMaster /></SuperAdminRoute>} />
 
-          <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin', 'gerente']}><AdminLayout /></ProtectedRoute>}>
+          {/* ✨ Rotas Dinâmicas da Barbearia Específica (ex: /streetbarber) */}
+          <Route path="/:slug" element={<HomeCliente onOpenLogin={openLogin} />} />
+          <Route path="/:slug/agendar" element={<AgendamentoCliente onOpenLogin={openLogin} />} />
+          
+          {/* Rotas Protegidas de Clientes e Barbeiros */}
+          <Route path="/:slug/area-cliente" element={<ProtectedRoute allowedRoles={['cliente', 'admin', 'gerente', 'funcionario']}><AreaCliente /></ProtectedRoute>} />
+          <Route path="/:slug/barbeiro" element={<ProtectedRoute allowedRoles={['funcionario', 'gerente', 'admin']}><AgendaBarbeiro /></ProtectedRoute>} />
+
+          {/* Rotas de Administração da Barbearia Específica */}
+          <Route path="/:slug/admin" element={<ProtectedRoute allowedRoles={['admin', 'gerente']}><AdminLayout /></ProtectedRoute>}>
             <Route index element={<DashboardAdmin />} />
             <Route path="equipe" element={<AdminEquipe />} />
             <Route path="usuarios" element={<AdminUsuarios />} />
@@ -102,6 +115,7 @@ function AppContent() {
             <Route path="fidelidade" element={<AdminFidelidade />} />
           </Route>
 
+          {/* Rota de fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

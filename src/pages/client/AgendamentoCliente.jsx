@@ -1,16 +1,15 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
-import { 
-  Calendar, Clock, User, CheckCircle2, ChevronRight, ArrowLeft, 
-  X, AlertTriangle, Mail, Phone, LogIn, Check, Scissors
-} from 'lucide-react';
+import { Calendar, Clock, User, CheckCircle2, ChevronRight, ArrowLeft, X, AlertTriangle, Mail, Phone, LogIn, Check, Scissors } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 export default function AgendamentoCliente({ onOpenLogin }) {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { slug } = useParams(); // CAPTURA DA URL
 
+  const [barbeariaContext, setBarbeariaContext] = useState(null);
   const [servicos, setServicos] = useState([]);
   const [barbeiros, setBarbeiros] = useState([]);
   
@@ -32,13 +31,21 @@ export default function AgendamentoCliente({ onOpenLogin }) {
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); 
 
-  // Carrega apenas os serviços ao iniciar a tela
+  // Inicia carregando o contexto da barbearia pela URL
   useEffect(() => {
-    carregarServicos();
-    recuperarRascunho();
-  }, []);
+    if (slug) {
+      carregarContextoBarbearia();
+    }
+  }, [slug]);
 
-  // ✨ CORREÇÃO DO BUG: Busca os barbeiros apenas QUANDO o serviço (e a barbearia) for escolhido
+  // Recupera rascunho apenas após a barbearia estar carregada
+  useEffect(() => {
+    if (barbeariaContext) {
+      recuperarRascunho();
+    }
+  }, [barbeariaContext]);
+
+  // Busca os barbeiros apenas QUANDO o serviço for escolhido
   useEffect(() => {
     if (servicoSelecionado?.barbearia_id) {
       buscarBarbeiros(servicoSelecionado.barbearia_id);
@@ -53,24 +60,51 @@ export default function AgendamentoCliente({ onOpenLogin }) {
     }
   }, [data, barbeiroSelecionado, passo]);
 
+  const carregarContextoBarbearia = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('barbearias')
+        .select('*')
+        .eq('slug', slug)
+        .single();
+      
+      if (error) throw error;
+      
+      if (data) {
+        setBarbeariaContext(data);
+        carregarServicos(data.id); // Carrega os serviços DESTA barbearia
+      }
+    } catch (err) {
+      console.error('Erro ao buscar contexto da barbearia:', err);
+    }
+  };
+
+  const carregarServicos = async (barbeariaId) => {
+    try {
+      const { data: servicosData } = await supabase
+        .from('servicos')
+        .select('*')
+        .eq('barbearia_id', barbeariaId)
+        .eq('ativo', true);
+        
+      if (servicosData) setServicos(servicosData);
+    } catch (err) {
+      console.error('Erro ao carregar serviços:', err.message);
+    }
+  };
+
   const recuperarRascunho = () => {
     const rascunho = localStorage.getItem('agendamento_pendente');
     if (rascunho) {
       const dados = JSON.parse(rascunho);
-      setServicoSelecionado(dados.servico);
-      setBarbeiroSelecionado(dados.barbeiro);
-      setData(dados.data);
-      setHorario(dados.horario);
-      setPasso(3);
-    }
-  };
-
-  const carregarServicos = async () => {
-    try {
-      const { data: servicosData } = await supabase.from('servicos').select('*').eq('ativo', true);
-      if (servicosData) setServicos(servicosData);
-    } catch (err) {
-      console.error('Erro ao carregar serviços:', err.message);
+      // Evita carregar rascunho de outra barbearia
+      if (dados.servico.barbearia_id === barbeariaContext.id) {
+        setServicoSelecionado(dados.servico);
+        setBarbeiroSelecionado(dados.barbeiro);
+        setData(dados.data);
+        setHorario(dados.horario);
+        setPasso(3);
+      }
     }
   };
 
@@ -80,7 +114,7 @@ export default function AgendamentoCliente({ onOpenLogin }) {
         .from('usuarios')
         .select('id, nome, avatar_url')
         .eq('barbearia_id', barbeariaId)
-        .eq('exibe_na_agenda', true) // Filtro de permissão
+        .eq('exibe_na_agenda', true)
         .eq('ativo', true);
 
       if (error) throw error;
@@ -260,18 +294,24 @@ export default function AgendamentoCliente({ onOpenLogin }) {
     setJaTinhaConta(false);
     setPasso(1);
     setIsCancelModalOpen(false);
-    navigate('/');
+    navigate(`/${slug}`);
   };
 
-  // Cálculo da barra de progresso (iOS style)
   const progresso = ((passo - 1) / 3) * 100;
+
+  if (!barbeariaContext) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="animate-spin h-8 w-8 border-4 border-brand border-t-transparent rounded-full"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col text-text-base pb-24 bg-background min-h-screen font-sans">
       <div className="flex-1 flex justify-center pt-8 px-4 sm:px-6 lg:px-8">
         <div className="w-full max-w-xl">
           
-          {/* HEADER DA TELA & STEPPER PREMIUM */}
           {passo < 4 && (
             <div className="mb-10">
               <div className="flex items-center justify-between mb-8">
@@ -282,10 +322,9 @@ export default function AgendamentoCliente({ onOpenLogin }) {
                   <ArrowLeft size={24} />
                 </button>
                 <h1 className="text-lg font-black text-text-base">Nova Reserva</h1>
-                <div className="w-10"></div> {/* Espaçador para centralizar o título */}
+                <div className="w-10"></div>
               </div>
 
-              {/* Progress Bar Style */}
               <div className="relative px-2">
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1.5 bg-border-line rounded-full z-0 overflow-hidden">
                   <div 
@@ -315,17 +354,18 @@ export default function AgendamentoCliente({ onOpenLogin }) {
             </div>
           )}
 
-          {/* PASSO 1: Selecionar Serviço (Estilo Apple List) */}
           {passo === 1 && (
             <div className="space-y-5 animate-fadeIn">
               <div>
                 <h2 className="text-2xl font-black text-text-base">O que vamos fazer?</h2>
-                <p className="text-sm text-text-muted mt-1">Selecione um serviço para continuarmos.</p>
+                <p className="text-sm text-text-muted mt-1">Selecione um serviço na {barbeariaContext.nome}.</p>
               </div>
 
               <div className="space-y-3">
                 {servicos.length === 0 ? (
-                  <div className="flex justify-center p-10"><div className="h-6 w-6 border-2 border-brand border-t-transparent rounded-full animate-spin"></div></div>
+                  <div className="bg-surface p-5 rounded-3xl border border-dashed border-border-line text-center">
+                    <p className="font-bold text-text-muted">Nenhum serviço disponível no momento.</p>
+                  </div>
                 ) : (
                   servicos.map((servico) => (
                     <button 
@@ -351,7 +391,6 @@ export default function AgendamentoCliente({ onOpenLogin }) {
             </div>
           )}
 
-          {/* PASSO 2: Selecionar Profissional (Estilo Grid Moderno) */}
           {passo === 2 && (
             <div className="space-y-5 animate-fadeIn">
               <div>
@@ -387,7 +426,6 @@ export default function AgendamentoCliente({ onOpenLogin }) {
             </div>
           )}
           
-          {/* PASSO 3: Data, Hora e Cadastro (Formulário Limpo) */}
           {passo === 3 && (
             <div className="space-y-6 animate-fadeIn">
               <div>
@@ -397,7 +435,6 @@ export default function AgendamentoCliente({ onOpenLogin }) {
               
               <form onSubmit={handleConfirmarAgendamento} className="space-y-6">
                 
-                {/* Bloco de Data e Hora */}
                 <div className="bg-surface p-5 sm:p-6 rounded-3xl border border-border-line shadow-sm space-y-6">
                   <div>
                     <label className="block text-xs font-black text-text-muted mb-2 uppercase tracking-wider">Selecione o Dia</label>
@@ -446,7 +483,6 @@ export default function AgendamentoCliente({ onOpenLogin }) {
                   )}
                 </div>
 
-                {/* Bloco do Convidado (Guest) */}
                 {!user && horario && (
                   <div className="bg-brand/5 p-5 sm:p-6 rounded-3xl border border-brand/20 space-y-5 animate-fadeIn">
                     <div>
@@ -474,7 +510,6 @@ export default function AgendamentoCliente({ onOpenLogin }) {
                   </div>
                 )}
 
-                {/* Resumo & Botão Final */}
                 <div className="pt-2">
                   <div className="flex items-center justify-between mb-4 px-2">
                     <p className="text-sm font-bold text-text-muted">Total a pagar no local</p>
@@ -497,7 +532,6 @@ export default function AgendamentoCliente({ onOpenLogin }) {
             </div>
           )}
 
-          {/* PASSO 4: Sucesso Premium */}
           {passo === 4 && (
             <div className="bg-surface p-8 sm:p-10 rounded-[2rem] border border-border-line shadow-xl text-center animate-fadeIn">
               <div className="relative mx-auto w-24 h-24 mb-6">
@@ -539,12 +573,12 @@ export default function AgendamentoCliente({ onOpenLogin }) {
               
               <div className="flex flex-col gap-3">
                 {jaTinhaConta && (
-                  <button onClick={() => { onOpenLogin(); navigate('/'); }} className="w-full bg-brand text-white py-3.5 rounded-2xl text-sm font-bold hover:brightness-105 transition-all shadow-md cursor-pointer flex items-center justify-center gap-2">
+                  <button onClick={() => { onOpenLogin(); navigate(`/${slug}`); }} className="w-full bg-brand text-white py-3.5 rounded-2xl text-sm font-bold hover:brightness-105 transition-all shadow-md cursor-pointer flex items-center justify-center gap-2">
                     <LogIn size={18}/> Fazer Login Agora
                   </button>
                 )}
-                <button onClick={() => navigate('/')} className={`w-full bg-surface border border-border-line py-3.5 rounded-2xl text-sm font-bold text-text-base hover:border-brand transition-all cursor-pointer`}>
-                  Voltar para o Início
+                <button onClick={() => navigate(`/${slug}`)} className={`w-full bg-surface border border-border-line py-3.5 rounded-2xl text-sm font-bold text-text-base hover:border-brand transition-all cursor-pointer`}>
+                  Voltar para a Barbearia
                 </button>
               </div>
             </div>
@@ -553,13 +587,12 @@ export default function AgendamentoCliente({ onOpenLogin }) {
         </div>
       </div>
 
-      {/* MODAL DE CANCELAMENTO (Desfocado e Suave) */}
       {isCancelModalOpen && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-background/80 backdrop-blur-md p-4 animate-fadeIn">
           <div className="bg-surface border border-border-line w-full max-w-sm rounded-[2rem] p-8 shadow-2xl relative animate-scaleIn">
             <div className="h-16 w-16 bg-red-500/10 rounded-full flex items-center justify-center text-red-500 mx-auto mb-5"><AlertTriangle size={32} /></div>
             <h3 className="text-xl font-black text-text-base mb-2 text-center">Cancelar Reserva?</h3>
-            <p className="text-sm text-text-muted mb-8 text-center leading-relaxed">Todo o progresso das suas escolhas será perdido e você voltará para o início.</p>
+            <p className="text-sm text-text-muted mb-8 text-center leading-relaxed">Todo o progresso das suas escolhas será perdido e você voltará para a página principal.</p>
             
             <div className="flex flex-col gap-3">
               <button type="button" onClick={resetarECancelarTudo} className="w-full py-3.5 rounded-2xl bg-red-500 hover:bg-red-600 text-sm font-black text-white shadow-md shadow-red-500/20 transition-colors cursor-pointer">

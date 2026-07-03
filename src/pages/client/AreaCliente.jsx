@@ -2,21 +2,19 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
 import { 
-  User, Calendar, Lock, Phone, MapPin, 
-  Scissors, Clock, CheckCircle2, AlertCircle, XCircle,
-  Coins, Gift, Ticket, Sparkles, ChevronRight, Star
+  User, Calendar, Lock, Phone, MapPin, Scissors, Clock, 
+  CheckCircle2, AlertCircle, XCircle, Coins, Gift, Ticket, 
+  Sparkles, Star, Sun, Moon 
 } from 'lucide-react';
 
 export default function AreaCliente() {
   const { user, profile } = useAuth();
-  // Começa direto na aba de fidelidade para dar destaque!
   const [tab, setTab] = useState('fidelidade'); 
 
   return (
     <div className="flex flex-col text-text-base bg-background min-h-screen pb-24 font-sans">
       <div className="w-full max-w-4xl mx-auto px-5 pt-8 md:pt-12 space-y-8">
         
-        {/* HEADER DO PERFIL */}
         <div className="bg-surface border border-border-line p-6 sm:p-8 rounded-[2rem] shadow-sm flex items-center gap-5">
           <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-full bg-brand/10 text-brand flex items-center justify-center text-2xl font-black border-2 border-brand/20 shadow-sm shrink-0">
             {profile?.nome?.charAt(0).toUpperCase() || <User size={32} />}
@@ -33,7 +31,6 @@ export default function AreaCliente() {
           </div>
         </div>
         
-        {/* SEGMENTED CONTROL (ABAS) */}
         <div className="flex p-1.5 bg-surface border border-border-line rounded-2xl shadow-xs overflow-x-auto hide-scrollbar">
           <button 
             onClick={() => setTab('fidelidade')} 
@@ -55,7 +52,6 @@ export default function AreaCliente() {
           </button>
         </div>
 
-        {/* CONTEÚDO DAS ABAS */}
         <div className="animate-fadeIn">
           {tab === 'fidelidade' && <ClubeFidelidade user={user} profile={profile} />}
           {tab === 'agendamentos' && <ListaAgendamentos user={user} />}
@@ -67,38 +63,48 @@ export default function AreaCliente() {
   );
 }
 
-// ==========================================
-// ✨ NOVA ABA: CLUBE DE FIDELIDADE
-// ==========================================
 function ClubeFidelidade({ user, profile }) {
   const [recompensas, setRecompensas] = useState([]);
   const [vouchers, setVouchers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [resgatando, setResgatando] = useState(false);
 
-  // Recarrega os dados locais se houver alteração
   const saldoAtual = profile?.saldo_pontos || 0;
 
   useEffect(() => {
-    carregarFidelidade();
-  }, [profile]);
+    if (user && profile) carregarFidelidade();
+  }, [user, profile]);
 
   const carregarFidelidade = async () => {
     setLoading(true);
     try {
-      // 1. Busca recompensas cadastradas pelo Admin
-      if (profile?.barbearia_id) {
+      let currentBarbeariaId = profile?.barbearia_id;
+      
+      if (!currentBarbeariaId) {
+        const { data: ultimoAgendamento } = await supabase
+          .from('agendamentos')
+          .select('barbearia_id')
+          .eq('cliente_id', user.id)
+          .order('criado_em', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+          
+        if (ultimoAgendamento) {
+          currentBarbeariaId = ultimoAgendamento.barbearia_id;
+        }
+      }
+
+      if (currentBarbeariaId) {
         const { data: recData } = await supabase
           .from('recompensas_fidelidade')
           .select('*')
-          .eq('barbearia_id', profile.barbearia_id)
+          .eq('barbearia_id', currentBarbeariaId)
           .eq('ativo', true)
           .order('pontos_necessarios', { ascending: true });
         
         if (recData) setRecompensas(recData);
       }
 
-      // 2. Busca Vouchers pendentes do cliente
       const { data: vouchData } = await supabase
         .from('resgates_fidelidade')
         .select('*')
@@ -125,13 +131,11 @@ function ClubeFidelidade({ user, profile }) {
 
     setResgatando(true);
     try {
-      // Gera um código de 6 caracteres aleatórios (Ex: A8X92B)
       const codigoGerado = Math.random().toString(36).substring(2, 8).toUpperCase();
 
-      // Chama a função SQL segura
       const { data: sucesso, error } = await supabase.rpc('gerar_codigo_resgate', {
         p_cliente_id: user.id,
-        p_barbearia_id: profile.barbearia_id,
+        p_barbearia_id: recompensa.barbearia_id, 
         p_recompensa_id: recompensa.id,
         p_recompensa_nome: recompensa.titulo,
         p_custo: recompensa.pontos_necessarios,
@@ -142,7 +146,7 @@ function ClubeFidelidade({ user, profile }) {
       
       if (sucesso) {
         alert('Prêmio resgatado! Mostre o código no balcão da barbearia.');
-        window.location.reload(); // Recarrega a página para atualizar o saldo no Contexto
+        window.location.reload(); 
       } else {
         alert('Saldo insuficiente ou erro ao processar.');
       }
@@ -157,8 +161,6 @@ function ClubeFidelidade({ user, profile }) {
 
   return (
     <div className="space-y-8 animate-fadeIn">
-      
-      {/* VOUCHERS ATIVOS (CÓDIGOS GERADOS) */}
       {vouchers.length > 0 && (
         <div className="space-y-4">
           <h3 className="text-sm font-black text-text-muted uppercase tracking-wider flex items-center gap-2">
@@ -185,7 +187,6 @@ function ClubeFidelidade({ user, profile }) {
         </div>
       )}
 
-      {/* LOJA DE RECOMPENSAS */}
       <div className="space-y-4">
         <h3 className="text-sm font-black text-text-muted uppercase tracking-wider flex items-center gap-2">
           <Sparkles size={16} className="text-brand"/> Troque suas moedas
@@ -193,12 +194,11 @@ function ClubeFidelidade({ user, profile }) {
 
         {recompensas.length === 0 ? (
           <div className="bg-surface p-8 border border-dashed border-border-line rounded-3xl text-center">
-            <p className="font-bold text-text-muted">Nenhum prêmio disponível no momento.</p>
+            <p className="font-bold text-text-muted">Nenhum prêmio disponível na barbearia visitada.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {recompensas.map(rec => {
-              // Lógica da Barra de Progresso
               const percentual = Math.min((saldoAtual / rec.pontos_necessarios) * 100, 100);
               const podeResgatar = saldoAtual >= rec.pontos_necessarios;
               const falta = rec.pontos_necessarios - saldoAtual;
@@ -216,7 +216,6 @@ function ClubeFidelidade({ user, profile }) {
                   </div>
 
                   <div>
-                    {/* Barra de Progresso */}
                     <div className="mb-4">
                       <div className="flex justify-between text-[10px] font-black uppercase text-text-muted mb-1.5">
                         <span>Progresso</span>
@@ -252,14 +251,27 @@ function ClubeFidelidade({ user, profile }) {
   );
 }
 
-// ==========================================
-// CÓDIGOS ABAIXO PERMANECEM IGUAIS AO ANTERIOR
-// ==========================================
-
 function FormularioPerfil({ user, profile }) {
   const [formData, setFormData] = useState(profile || {});
   const [novaSenha, setNovaSenha] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // ✨ Tema Settings Logic
+  const [theme, setTheme] = useState(localStorage.getItem('horza_theme') || 'light');
+
+  useEffect(() => {
+    const handleThemeChange = () => setTheme(localStorage.getItem('horza_theme') || 'light');
+    window.addEventListener('themeChange', handleThemeChange);
+    return () => window.removeEventListener('themeChange', handleThemeChange);
+  }, []);
+
+  const toggleTheme = () => {
+    const newTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(newTheme);
+    document.documentElement.classList.toggle('dark', newTheme === 'dark');
+    localStorage.setItem('horza_theme', newTheme);
+    window.dispatchEvent(new Event('themeChange')); // Sincroniza com o Navbar
+  };
 
   const handleUpdate = async () => {
     setLoading(true);
@@ -298,7 +310,28 @@ function FormularioPerfil({ user, profile }) {
 
   return (
     <div className="bg-surface p-6 sm:p-8 rounded-[2rem] border border-border-line shadow-sm space-y-8 animate-fadeIn">
+      
+      {/* ✨ SEÇÃO DE TEMA ADICIONADA AQUI ✨ */}
       <div>
+        <h3 className="text-lg font-black text-text-base flex items-center gap-2 mb-6">
+          <Sun size={20} className="text-brand"/> Preferências
+        </h3>
+        <div className="flex items-center justify-between bg-background border border-border-line p-4 rounded-2xl">
+          <div>
+            <p className="font-bold text-text-base">Tema do Sistema</p>
+            <p className="text-xs text-text-muted mt-0.5">Alternar entre modo claro e escuro</p>
+          </div>
+          <button 
+            type="button" 
+            onClick={toggleTheme} 
+            className="p-3 rounded-xl bg-surface border border-border-line text-text-base hover:border-brand hover:text-brand shadow-sm transition-all cursor-pointer"
+          >
+            {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+          </button>
+        </div>
+      </div>
+
+      <div className="pt-8 border-t border-border-line">
         <h3 className="text-lg font-black text-text-base flex items-center gap-2 mb-6">
           <User size={20} className="text-brand"/> Dados Pessoais
         </h3>
