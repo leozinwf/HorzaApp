@@ -47,7 +47,7 @@ export default function AdminLayout() {
   return (
     <div className="w-full font-sans pb-24 md:pb-10 relative">
       {/* MENU HORIZONTAL ADMIN - STICKY PARA MOBILE E DESKTOP */}
-      <div className="sticky top-[68px] z-40 bg-background/95 backdrop-blur-md border-b border-border-line mb-6 shadow-sm">
+      <div className="sticky top-[68px] z-40 bg-background/25 backdrop-blur-md border-b border-border-line mb-6 shadow-sm">
         
         <div className="absolute top-0 bottom-0 left-0 w-8 bg-gradient-to-r from-background to-transparent pointer-events-none md:hidden"></div>
         <div className="absolute top-0 bottom-0 right-0 w-8 bg-gradient-to-l from-background to-transparent pointer-events-none md:hidden"></div>
