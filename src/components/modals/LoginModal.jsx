@@ -1,26 +1,46 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
-import { useModal } from '../../context/ModalContext'; // Usando as nossas novas modais bonitas
-import { X, Eye, EyeOff, Mail, Lock, User, Phone, LogIn } from 'lucide-react';
+import { useModal } from '../../context/ModalContext';
+import { X, Eye, EyeOff, Mail, Lock, User, Phone, LogIn, Store, Briefcase } from 'lucide-react';
 
 export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
   const { showAlert } = useModal();
   const [mode, setMode] = useState(initialMode); // 'login', 'register', 'forgot_password', 'update_password'
+  const [tipoCadastro, setTipoCadastro] = useState('cliente'); // 'cliente' ou 'empresa'
   
   // Estados do Formulário
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  
+  // Campos Usuário
   const [nome, setNome] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
+  const [cpf, setCpf] = useState('');
+
+  // Campos Empresa
+  const [nomeBarbearia, setNomeBarbearia] = useState('');
+  const [slugBarbearia, setSlugBarbearia] = useState('');
+  const [cnpj, setCnpj] = useState('');
+  const [cidade, setCidade] = useState('');
+  const [estado, setEstado] = useState('');
   
   // Controles de UI
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false); // Lupa da confirmação
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // Resetar estados ao abrir/fechar ou mudar de modo
+  // Formatação de WhatsApp (Mascara: (DD) 9XXXX-XXXX)
+  const handlePhoneChange = (e) => {
+    let value = e.target.value.replace(/\D/g, '');
+    if (value.length > 11) value = value.slice(0, 11);
+    if (value.length > 2) value = `(${value.slice(0,2)}) ${value.slice(2)}`;
+    if (value.length > 9) value = `${value.slice(0,10)}-${value.slice(10)}`;
+    setWhatsapp(value);
+  };
+
+  // Resetar estados
   useEffect(() => {
     if (isOpen) {
       setMode(initialMode);
@@ -32,42 +52,88 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
 
   if (!isOpen) return null;
 
-  // Verifica se as senhas estão diferentes enquanto o usuário digita
-  const senhasDiferentes = (mode === 'register' || mode === 'update_password') && 
-                           confirmPassword.length > 0 && 
-                           password !== confirmPassword;
+  // Validações da Senha
+  const validacoesSenha = {
+    minimo: password.length >= 6,
+    maiuscula: /[A-Z]/.test(password),
+    especial: /[^A-Za-z0-9]/.test(password)
+  };
+  const senhaValida = validacoesSenha.minimo && validacoesSenha.maiuscula && validacoesSenha.especial;
+  const senhasDiferentes = (mode === 'register' || mode === 'update_password') && confirmPassword.length > 0 && password !== confirmPassword;
 
   // 1. FLUXO DE LOGIN OU CADASTRO
   const handleAuth = async (e) => {
-    e.preventDefault(); // Impede o reload da página pelo formulário
+    e.preventDefault();
     setError('');
 
-    if (mode === 'register' && password !== confirmPassword) {
-      setError('As senhas não coincidem. Verifique e tente novamente.');
-      return;
+    if (mode === 'register') {
+      if (!senhaValida) {
+        setError('A senha não atende aos requisitos mínimos.');
+        return;
+      }
+      if (senhasDiferentes) {
+        setError('As senhas não coincidem.');
+        return;
+      }
     }
 
     setLoading(true);
 
     try {
       if (mode === 'register') {
+        
+        let novaBarbeariaId = null;
+
+        // Se for criar empresa, criamos o registro pendente primeiro
+        if (tipoCadastro === 'empresa') {
+          const { data: barbData, error: barbError } = await supabase.from('barbearias').insert([{
+            nome: nomeBarbearia,
+            slug: slugBarbearia.toLowerCase(),
+            cnpj: cnpj,
+            cidade: cidade,
+            estado: estado,
+            telefone: whatsapp,
+            plano_ativo: 'pendente_aprovacao'
+          }]).select('id').single();
+
+          if (barbError) throw new Error('Este SLUG já está em uso ou ocorreu um erro com os dados da empresa.');
+          novaBarbeariaId = barbData.id;
+        }
+
+        // Criar usuário no Auth
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
-          password,
-          options: {
-            data: { nome, whatsapp, role: 'cliente' }
-          }
+          password
         });
+        
         if (signUpError) throw signUpError;
+
         if (data?.user) {
-            showAlert('Bem-vindo!', 'Conta criada com sucesso. Você já está logado.', 'success');
-            onClose();
+          // Inserir os detalhes manuais no banco public.usuarios
+          const { error: profileError } = await supabase.from('usuarios').insert([{
+            id: data.user.id,
+            nome: nome,
+            email: email,
+            whatsapp: whatsapp,
+            cpf: cpf,
+            role: tipoCadastro === 'empresa' ? 'admin' : 'cliente',
+            barbearia_id: novaBarbeariaId // Será null para clientes globais
+          }]);
+
+          if (profileError) throw profileError;
+
+          if (tipoCadastro === 'empresa') {
+            showAlert('Cadastro Enviado!', 'Uma pessoa da equipe do Horza app vai verificar o cadastro e você receberá um e-mail com a confirmação do cadastro.', 'success');
+          } else {
+            showAlert('Bem-vindo!', 'Conta criada com sucesso. Você já pode realizar seus agendamentos.', 'success');
+          }
+          onClose();
         }
       } else {
         const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;
         if (data?.user) {
-            onClose(); // Fecha a modal e deixa o AuthContext cuidar do resto
+          onClose();
         }
       }
     } catch (err) {
@@ -77,78 +143,43 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
     }
   };
 
-  // 2. FLUXO DE RECUPERAR SENHA (Envia o E-mail)
+  // (O resto dos Handlers de Recuperação de Senha permanecem iguais)
   const handleForgotPassword = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: window.location.origin + '/',
-      });
+      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + '/' });
       if (error) throw error;
       showAlert('E-mail enviado!', 'Verifique a sua caixa de entrada para redefinir a sua senha.', 'success');
       setMode('login');
     } catch (err) {
       setError('Erro ao enviar e-mail de recuperação: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
-  // 3. FLUXO DE SALVAR NOVA SENHA (Quando clica no link do E-mail)
   const handleUpdatePassword = async (e) => {
-  e.preventDefault();
-  setError('');
+    e.preventDefault();
+    setError('');
+    if (password !== confirmPassword) return setError('As senhas não coincidem.');
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+      showAlert('Sucesso!', 'Senha alterada com sucesso.', 'success');
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    } finally { setLoading(false); }
+  };
 
-  if (password !== confirmPassword) {
-    setError('As senhas não coincidem.');
-    return;
-  }
-
-  setLoading(true);
-  try {
-    const { error } = await supabase.auth.updateUser({ password });
-    if (error) {
-      // ✨ TRADUÇÃO DO ERRO AQUI
-      if (error.message.includes('New password should be different')) {
-        throw new Error('A nova senha deve ser diferente da antiga.');
-      }
-      throw error;
-    }
-    
-    showAlert('Sucesso!', 'Senha alterada com sucesso.', 'success');
-    onClose();
-  } catch (err) {
-    setError(err.message);
-  } finally {
-    setLoading(false);
-  }
-};
-
-  // Adicione esta função auxiliar dentro do seu LoginModal.jsx
-const calcularForcaSenha = (senha) => {
-  if (!senha) return { forca: 0, cor: 'bg-background', texto: '' };
-  let forca = 0;
-  if (senha.length > 6) forca++;
-  if (/[A-Z]/.test(senha)) forca++;
-  if (/[0-9]/.test(senha)) forca++;
-  if (/[^A-Za-z0-9]/.test(senha)) forca++;
-
-  if (forca <= 1) return { forca: 1, cor: 'bg-red-500', texto: 'Muito Fraca' };
-  if (forca === 2) return { forca: 2, cor: 'bg-amber-500', texto: 'Fraca' };
-  if (forca === 3) return { forca: 3, cor: 'bg-blue-500', texto: 'Forte' };
-  return { forca: 4, cor: 'bg-green-500', texto: 'Muito Forte' };
-};
-
-  // Fechar Modal ao clicar fora
   const handleBackdropClick = (e) => {
     if (e.target === e.currentTarget) onClose();
   };
 
   return (
-    <div onClick={handleBackdropClick} className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn">
-      <div className="bg-surface border border-border-line w-full max-w-md rounded-3xl p-6 md:p-8 shadow-2xl relative animate-slideUp">
+    <div onClick={handleBackdropClick} className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn overflow-y-auto">
+      <div className="bg-surface border border-border-line w-full max-w-lg rounded-3xl p-6 md:p-8 shadow-2xl relative my-auto animate-slideUp">
         
         <button onClick={onClose} className="absolute right-4 top-4 text-text-muted hover:text-text-base p-2 rounded-full hover:bg-background transition-colors cursor-pointer">
           <X size={20} />
@@ -177,102 +208,70 @@ const calcularForcaSenha = (senha) => {
           </div>
         )}
 
-        {/* 🚀 FORMULÁRIOS SEMÂNTICOS (Ativam o "Salvar Senha" do navegador) */}
+        {/* TABS DE CADASTRO (CLIENTE VS EMPRESA) */}
+        {mode === 'register' && (
+          <div className="flex bg-background border border-border-line rounded-xl p-1 mb-6">
+            <button 
+              type="button"
+              onClick={() => setTipoCadastro('cliente')}
+              className={`flex-1 py-2 text-sm font-bold rounded-lg flex items-center justify-center gap-2 transition-colors ${tipoCadastro === 'cliente' ? 'bg-surface text-brand shadow-sm' : 'text-text-muted hover:text-text-base'}`}
+            >
+              <User size={16} /> Sou Cliente
+            </button>
+            <button 
+              type="button"
+              onClick={() => setTipoCadastro('empresa')}
+              className={`flex-1 py-2 text-sm font-bold rounded-lg flex items-center justify-center gap-2 transition-colors ${tipoCadastro === 'empresa' ? 'bg-surface text-brand shadow-sm' : 'text-text-muted hover:text-text-base'}`}
+            >
+              <Store size={16} /> Sou Empresa
+            </button>
+          </div>
+        )}
 
-        {/* FORM: ATUALIZAR SENHA */}
-        {mode === 'update_password' && (
-          <form onSubmit={handleUpdatePassword} className="space-y-4">
-             <div className="relative">
-              <Lock size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
-              <input 
-                type={showPassword ? 'text' : 'password'} 
-                required 
-                placeholder="Nova Senha" 
-                value={password} 
-                onChange={(e) => setPassword(e.target.value)} 
-                autoComplete="new-password"
-                className="w-full pl-10 pr-10 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" 
-              />
-              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-3.5 text-text-muted hover:text-brand transition-colors cursor-pointer">
-                {showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}
-              </button>
-            </div>
-
-            <div>
-              <div className="relative">
-                <Lock size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
-                <input 
-                  type={showConfirmPassword ? 'text' : 'password'} 
-                  required 
-                  placeholder="Confirmar Nova Senha" 
-                  value={confirmPassword} 
-                  onChange={(e) => setConfirmPassword(e.target.value)} 
-                  autoComplete="new-password"
-                  className={`w-full pl-10 pr-10 py-3 bg-background border rounded-xl text-sm outline-none transition-colors ${senhasDiferentes ? 'border-red-500 focus:border-red-500' : 'border-border-line focus:border-brand'}`} 
-                />
-                {mode === 'update_password' && password && (
-                  <div className="mt-2 space-y-1">
-                    <div className="flex gap-1 h-1.5 w-full">
-                      {[1, 2, 3, 4].map((i) => (
-                        <div key={i} className={`h-full flex-1 rounded-full ${i <= calcularForcaSenha(password).forca ? calcularForcaSenha(password).cor : 'bg-background'}`}></div>
-                      ))}
-                    </div>
-                    <p className={`text-[10px] font-bold ${calcularForcaSenha(password).forca > 2 ? 'text-green-600' : 'text-amber-600'}`}>
-                      Força: {calcularForcaSenha(password).texto}
-                    </p>
-                  </div>
-                )}
-                <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3.5 top-3.5 text-text-muted hover:text-brand transition-colors cursor-pointer">
-                  {showConfirmPassword ? <EyeOff size={18}/> : <Eye size={18}/>}
-                </button>
+        {/* FORMULÁRIO */}
+        <form onSubmit={mode === 'update_password' ? handleUpdatePassword : mode === 'forgot_password' ? handleForgotPassword : handleAuth} className="space-y-4">
+          
+          {mode === 'register' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="relative md:col-span-2">
+                <User size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
+                <input type="text" required placeholder="Nome Completo" value={nome} onChange={(e) => setNome(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" />
               </div>
-              {senhasDiferentes && <p className="text-red-500 text-xs font-bold mt-1 px-1">As senhas não coincidem.</p>}
+              <div className="relative">
+                <Phone size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
+                <input type="tel" required placeholder="WhatsApp" value={whatsapp} onChange={handlePhoneChange} className="w-full pl-10 pr-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" />
+              </div>
+              <div className="relative">
+                <Briefcase size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
+                <input type="text" placeholder="CPF (Opcional)" value={cpf} onChange={(e) => setCpf(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" />
+              </div>
             </div>
+          )}
 
-            <button type="submit" disabled={loading} className="w-full bg-brand text-white font-bold py-3.5 rounded-xl text-sm hover:bg-brand-hover transition-colors shadow-md flex justify-center mt-6 cursor-pointer">
-              {loading ? <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : 'Salvar Nova Senha'}
-            </button>
-          </form>
-        )}
+          {/* CAMPOS ESPECÍFICOS DE EMPRESA */}
+          {mode === 'register' && tipoCadastro === 'empresa' && (
+            <div className="p-4 bg-brand/5 border border-brand/20 rounded-xl space-y-4 mt-4">
+              <h4 className="text-sm font-black text-brand uppercase tracking-wider mb-2 flex items-center gap-2">
+                <Store size={16} /> Dados da Barbearia
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input type="text" required placeholder="Nome da Barbearia" value={nomeBarbearia} onChange={(e) => setNomeBarbearia(e.target.value)} className="w-full px-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" />
+                <input type="text" required placeholder="Slug URL (ex: minha-barbearia)" value={slugBarbearia} onChange={(e) => setSlugBarbearia(e.target.value)} className="w-full px-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none lowercase" />
+                <input type="text" required placeholder="CNPJ" value={cnpj} onChange={(e) => setCnpj(e.target.value)} className="w-full px-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none md:col-span-2" />
+                <input type="text" required placeholder="Cidade" value={cidade} onChange={(e) => setCidade(e.target.value)} className="w-full px-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" />
+                <input type="text" required placeholder="Estado (UF)" value={estado} onChange={(e) => setEstado(e.target.value)} maxLength="2" className="w-full px-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none uppercase" />
+              </div>
+            </div>
+          )}
 
-        {/* FORM: RECUPERAR SENHA (E-MAIL) */}
-        {mode === 'forgot_password' && (
-          <form onSubmit={handleForgotPassword} className="space-y-4">
+          {mode !== 'update_password' && (
             <div className="relative">
               <Mail size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
-              <input type="email" required placeholder="Seu e-mail cadastrado" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" />
+              <input type="email" required placeholder="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" />
             </div>
-            <button type="submit" disabled={loading} className="w-full bg-brand text-white font-bold py-3.5 rounded-xl text-sm hover:bg-brand-hover transition-colors shadow-md flex justify-center mt-2 cursor-pointer">
-              {loading ? 'A Enviar...' : 'Receber link de recuperação'}
-            </button>
-            <p className="text-center text-sm font-semibold text-text-muted mt-4">
-              Lembrou da senha? <button type="button" onClick={() => setMode('login')} className="text-brand hover:underline cursor-pointer">Voltar ao Login</button>
-            </p>
-          </form>
-        )}
+          )}
 
-        {/* FORM: LOGIN OU CADASTRO */}
-        {(mode === 'login' || mode === 'register') && (
-          <form onSubmit={handleAuth} className="space-y-4">
-            
-            {mode === 'register' && (
-              <>
-                <div className="relative">
-                  <User size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
-                  <input type="text" required placeholder="Nome Completo" value={nome} onChange={(e) => setNome(e.target.value)} autoComplete="name" className="w-full pl-10 pr-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" />
-                </div>
-                <div className="relative">
-                  <Phone size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
-                  <input type="tel" required placeholder="WhatsApp" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} autoComplete="tel" className="w-full pl-10 pr-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" />
-                </div>
-              </>
-            )}
-
-            <div className="relative">
-              <Mail size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
-              <input type="email" required placeholder="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" className="w-full pl-10 pr-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" />
-            </div>
-
+          {mode !== 'forgot_password' && (
             <div className="relative">
               <Lock size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
               <input 
@@ -281,58 +280,69 @@ const calcularForcaSenha = (senha) => {
                 placeholder="Senha" 
                 value={password} 
                 onChange={(e) => setPassword(e.target.value)} 
-                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                 className="w-full pl-10 pr-10 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" 
               />
               <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-3.5 text-text-muted hover:text-brand transition-colors cursor-pointer" tabIndex="-1">
                 {showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}
               </button>
             </div>
+          )}
 
-            {mode === 'login' && (
-              <div className="flex justify-end">
-                <button type="button" onClick={() => setMode('forgot_password')} className="text-xs font-bold text-text-muted hover:text-brand transition-colors cursor-pointer">
-                  Esqueceu a senha?
-                </button>
+          {/* VALIDAÇÕES VISUAIS DA SENHA */}
+          {(mode === 'register' || mode === 'update_password') && (
+            <div className="px-2">
+              <ul className="text-xs space-y-1 mt-2">
+                <li className={`flex items-center gap-2 font-bold ${validacoesSenha.minimo ? 'text-green-500' : 'text-text-muted'}`}>
+                  {validacoesSenha.minimo ? '✓' : '✖'} Mínimo 6 dígitos
+                </li>
+                <li className={`flex items-center gap-2 font-bold ${validacoesSenha.maiuscula ? 'text-green-500' : 'text-text-muted'}`}>
+                  {validacoesSenha.maiuscula ? '✓' : '✖'} Pelo menos 1 letra maiúscula
+                </li>
+                <li className={`flex items-center gap-2 font-bold ${validacoesSenha.especial ? 'text-green-500' : 'text-text-muted'}`}>
+                  {validacoesSenha.especial ? '✓' : '✖'} Pelo menos 1 caractere especial
+                </li>
+              </ul>
+            </div>
+          )}
+
+          {(mode === 'register' || mode === 'update_password') && (
+            <div>
+              <div className="relative">
+                <Lock size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
+                <input 
+                  type={showConfirmPassword ? 'text' : 'password'} 
+                  required 
+                  placeholder="Confirmar Senha" 
+                  value={confirmPassword} 
+                  onChange={(e) => setConfirmPassword(e.target.value)} 
+                  className={`w-full pl-10 pr-10 py-3 bg-background border rounded-xl text-sm outline-none transition-colors ${senhasDiferentes ? 'border-red-500 focus:border-red-500' : 'border-border-line focus:border-brand'}`} 
+                />
               </div>
-            )}
+              {senhasDiferentes && <p className="text-red-500 text-xs font-bold mt-1 px-1">As senhas não coincidem.</p>}
+            </div>
+          )}
 
-            {mode === 'register' && (
-              <div>
-                <div className="relative">
-                  <Lock size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
-                  <input 
-                    type={showConfirmPassword ? 'text' : 'password'} 
-                    required 
-                    placeholder="Confirmar Senha" 
-                    value={confirmPassword} 
-                    onChange={(e) => setConfirmPassword(e.target.value)} 
-                    autoComplete="new-password"
-                    className={`w-full pl-10 pr-10 py-3 bg-background border rounded-xl text-sm outline-none transition-colors ${senhasDiferentes ? 'border-red-500 focus:border-red-500' : 'border-border-line focus:border-brand'}`} 
-                  />
-                  <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3.5 top-3.5 text-text-muted hover:text-brand transition-colors cursor-pointer" tabIndex="-1">
-                    {showConfirmPassword ? <EyeOff size={18}/> : <Eye size={18}/>}
-                  </button>
-                </div>
-                {/* ✨ MENSAGEM DE ERRO EM TEMPO REAL ✨ */}
-                {senhasDiferentes && (
-                  <p className="text-red-500 text-xs font-bold mt-1 px-1">As senhas não coincidem.</p>
-                )}
-              </div>
-            )}
+          {mode === 'login' && (
+            <div className="flex justify-end">
+              <button type="button" onClick={() => setMode('forgot_password')} className="text-xs font-bold text-text-muted hover:text-brand transition-colors cursor-pointer">
+                Esqueceu a senha?
+              </button>
+            </div>
+          )}
 
-            <button type="submit" disabled={loading} className="w-full bg-brand text-white font-bold py-3.5 rounded-xl text-sm hover:bg-brand-hover transition-colors shadow-md flex justify-center mt-4 cursor-pointer">
-              {loading ? <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : (mode === 'login' ? 'Entrar' : 'Criar Conta')}
-            </button>
+          <button type="submit" disabled={loading} className="w-full bg-brand text-white font-bold py-3.5 rounded-xl text-sm hover:bg-brand-hover transition-colors shadow-md flex justify-center mt-4 cursor-pointer">
+            {loading ? <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : (mode === 'login' ? 'Entrar' : mode === 'forgot_password' ? 'Recuperar Senha' : 'Confirmar e Salvar')}
+          </button>
 
+          {mode !== 'update_password' && mode !== 'forgot_password' && (
             <div className="mt-6 text-center text-sm font-semibold text-text-muted border-t border-border-line/50 pt-6">
               {mode === 'login' ? 'Ainda não tem conta? ' : 'Já tem uma conta? '}
               <button type="button" onClick={() => setMode(mode === 'login' ? 'register' : 'login')} className="text-brand hover:underline cursor-pointer">
                 {mode === 'login' ? 'Cadastre-se' : 'Faça Login'}
               </button>
             </div>
-          </form>
-        )}
+          )}
+        </form>
 
       </div>
     </div>

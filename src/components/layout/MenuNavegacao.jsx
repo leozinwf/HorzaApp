@@ -13,9 +13,18 @@ export default function MenuNavegacao({ onOpenLogin }) {
   const location = useLocation();
 
   const [slugDaEmpresa, setSlugDaEmpresa] = useState('');
-  
-  // ✨ Lógica do Tema (Claro/Escuro)
   const [theme, setTheme] = useState(localStorage.getItem('horza_theme') || 'light');
+
+  const getInicial = () => {
+    const nome = profile?.nome || user?.user_metadata?.nome;
+    if (nome) return nome.charAt(0).toUpperCase();
+    return user?.email?.charAt(0).toUpperCase() || 'Eu';
+  };
+
+  const getPrimeiroNome = () => {
+    const nome = profile?.nome || user?.user_metadata?.nome || 'Usuário';
+    return nome.split(' ')[0];
+  };
 
   useEffect(() => {
     const root = document.documentElement;
@@ -25,11 +34,9 @@ export default function MenuNavegacao({ onOpenLogin }) {
       root.classList.remove('dark');
     }
     localStorage.setItem('horza_theme', theme);
-    // Dispara evento para sincronizar com a AreaCliente
     window.dispatchEvent(new Event('themeChange'));
   }, [theme]);
 
-  // Escuta se o tema foi alterado em outra tela
   useEffect(() => {
     const handleThemeChange = () => {
       setTheme(localStorage.getItem('horza_theme') || 'light');
@@ -39,30 +46,25 @@ export default function MenuNavegacao({ onOpenLogin }) {
   }, []);
 
   const toggleTheme = () => {
-  const newTheme = theme === 'light' ? 'dark' : 'light';
-  setTheme(newTheme);
-  
-  // Isso aplica a classe no HTML raiz
-  if (newTheme === 'dark') {
-    document.documentElement.classList.add('dark');
-  } else {
-    document.documentElement.classList.remove('dark');
-  }
-  
-  localStorage.setItem('horza_theme', newTheme);
-};
+    const newTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(newTheme);
+    if (newTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('horza_theme', newTheme);
+  };
 
   const handleLogout = async () => {
     await logout();
     navigate('/');
   };
 
-  // Verifica as permissões
   const isSuperAdmin = user?.email === 'admin@barbearia.com';
   const isAdminOuGerente = profile?.role === 'admin' || profile?.role === 'gerente';
   const isFuncionario = profile?.role === 'funcionario';
 
-  // Busca o slug da barbearia
   useEffect(() => {
     async function buscarSlugDaEmpresa() {
       if (profile?.barbearia_id) {
@@ -145,7 +147,6 @@ export default function MenuNavegacao({ onOpenLogin }) {
 
         <div className="flex-1 flex items-center justify-end gap-3">
           
-          {/* ✨ BOTÃO DO TEMA (DESKTOP) ✨ */}
           <button 
             onClick={toggleTheme} 
             className="p-2.5 text-text-muted hover:text-brand rounded-xl hover:bg-surface border border-transparent hover:border-border-line transition-all cursor-pointer" 
@@ -158,10 +159,10 @@ export default function MenuNavegacao({ onOpenLogin }) {
             <div className="flex items-center gap-4 animate-fadeIn ml-2">
               <Link to="/area-cliente" className="flex items-center gap-2 px-4 py-2 rounded-full bg-background border border-border-line hover:border-brand transition-all group shadow-sm">
                 <div className="h-7 w-7 rounded-full bg-brand/10 text-brand flex items-center justify-center text-xs font-black group-hover:bg-brand group-hover:text-white transition-colors">
-                  {profile?.nome?.charAt(0) || 'U'}
+                  {getInicial()}
                 </div>
                 <span className="text-sm font-bold text-text-base">
-                  {profile?.nome?.split(' ')[0]}
+                  {getPrimeiroNome()}
                 </span>
               </Link>
               

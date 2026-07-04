@@ -82,42 +82,36 @@ function AppContent() {
   return (
     <>
       <MenuNavegacao onOpenLogin={openLogin} />
-      
+
       <main className="pb-24 md:pb-0 min-h-screen bg-background">
-        <Routes>
-          {/* ✨ Rota Principal: Marketplace (Busca por localização) */}
-          <Route path="/" element={<HomeMarketplace />} />
-          
-          {/* ✨ Rota Super Admin (Protegida) */}
-          <Route path="/master" element={<SuperAdminRoute><DashboardMaster /></SuperAdminRoute>} />
+          <Routes>
+            <Route path="/" element={<HomeMarketplace />} />
+            <Route path="/master" element={<SuperAdminRoute><DashboardMaster /></SuperAdminRoute>} />
 
-          {/* ✨ Rotas Dinâmicas da Barbearia Específica (ex: /streetbarber) */}
-          <Route path="/:slug" element={<HomeCliente onOpenLogin={openLogin} />} />
-          <Route path="/:slug/agendar" element={<AgendamentoCliente onOpenLogin={openLogin} />} />
-          
-          {/* Rotas Protegidas de Clientes e Barbeiros */}
-          <Route path="/:slug/area-cliente" element={<ProtectedRoute allowedRoles={['cliente', 'admin', 'gerente', 'funcionario']}><AreaCliente /></ProtectedRoute>} />
-          <Route path="/:slug/barbeiro" element={<ProtectedRoute allowedRoles={['funcionario', 'gerente', 'admin']}><AgendaBarbeiro /></ProtectedRoute>} />
+            <Route path="/area-cliente" element={<ProtectedRoute allowedRoles={['cliente', 'admin', 'gerente', 'funcionario']}><AreaCliente /></ProtectedRoute>}/>
 
-          {/* Rotas de Administração da Barbearia Específica */}
-          <Route path="/:slug/admin" element={<ProtectedRoute allowedRoles={['admin', 'gerente']}><AdminLayout /></ProtectedRoute>}>
-            <Route index element={<DashboardAdmin />} />
-            <Route path="equipe" element={<AdminEquipe />} />
-            <Route path="usuarios" element={<AdminUsuarios />} />
-            <Route path="agenda" element={<AdminAgendaEquipe />} />
-            <Route path="servicos" element={<AdminServicos />} />
-            <Route path="estoque" element={<AdminEstoque />} />
-            <Route path="pagamentos" element={<AdminPagamentos />} />
-            <Route path="pagamentos/callback" element={<StripeCallback />} />
-            <Route path="empresa" element={<AdminEmpresa />} />
-            <Route path="financeiro" element={<AdminFinanceiro />} />
-            <Route path="permissoes" element={<AdminPermissoes />} />
-            <Route path="fidelidade" element={<AdminFidelidade />} />
-          </Route>
+            <Route path="/:slug" element={<HomeCliente onOpenLogin={openLogin} />} />
+            <Route path="/:slug/agendar" element={<AgendamentoCliente onOpenLogin={openLogin} />} />
 
-          {/* Rota de fallback */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            <Route path="/:slug/barbeiro" element={<ProtectedRoute allowedRoles={['funcionario', 'gerente', 'admin']}><AgendaBarbeiro /></ProtectedRoute>} />
+
+            <Route path="/:slug/admin" element={<ProtectedRoute allowedRoles={['admin', 'gerente']}><AdminLayout /></ProtectedRoute>}>
+              <Route index element={<DashboardAdmin />} />
+              <Route path="equipe" element={<AdminEquipe />} />
+              <Route path="usuarios" element={<AdminUsuarios />} />
+              <Route path="agenda" element={<AdminAgendaEquipe />} />
+              <Route path="servicos" element={<AdminServicos />} />
+              <Route path="estoque" element={<AdminEstoque />} />
+              <Route path="pagamentos" element={<AdminPagamentos />} />
+              <Route path="pagamentos/callback" element={<StripeCallback />} />
+              <Route path="empresa" element={<AdminEmpresa />} />
+              <Route path="financeiro" element={<AdminFinanceiro />} />
+              <Route path="permissoes" element={<AdminPermissoes />} />
+              <Route path="fidelidade" element={<AdminFidelidade />} />
+            </Route>
+
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
       </main>
 
       <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} initialMode={loginModalMode} />
