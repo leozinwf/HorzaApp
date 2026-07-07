@@ -5,7 +5,7 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import { supabase } from '../../services/supabaseClient';
 import { 
   Scissors, User, Clock, MapPin, LogOut, Star, CalendarDays, 
-  ChevronRight, Sparkles, Sun, BookOpen, PartyPopper, Heart, Tag, Gift, Search, Instagram, Facebook, Video, Image as ImageIcon 
+  ChevronRight, Sparkles, Sun, BookOpen, PartyPopper, Heart, Tag, Gift, Search, Video, AtSign, Image as ImageIcon 
 } from 'lucide-react';
 
 export default function HomeCliente({ onOpenLogin }) {
@@ -169,7 +169,7 @@ export default function HomeCliente({ onOpenLogin }) {
                   )}
                   {widget.type === 'social' && (
                     <a href={widget.content} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-6 hover:bg-brand/5 transition-colors">
-                      {widget.content.includes('instagram') ? <Instagram className="text-pink-500" /> : <Facebook className="text-blue-500" />}
+                      {widget.content.includes('instagram') ? <AtSign className="text-pink-500" /> : <Facebook className="text-blue-500" />}
                       <span className="font-bold text-sm text-text-base">Siga-nos nas Redes Sociais</span>
                     </a>
                   )}
