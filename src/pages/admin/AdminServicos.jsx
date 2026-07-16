@@ -149,6 +149,11 @@ export default function AdminServicos() {
             <label className="block text-[10px] font-black text-brand uppercase tracking-wider mb-2 flex items-center gap-1"><Coins size={14}/> Moedas de Fidelidade Geradas</label>
             <p className="text-xs text-brand/70 font-medium mb-3">Quantas moedas o cliente ganha ao concluir este serviço?</p>
             <input required type="number" min="0" value={form.pontos_recompensa} onChange={e => setForm({...form, pontos_recompensa: e.target.value})} placeholder="Ex: 10" className="w-full bg-white dark:bg-background border-none text-sm font-bold text-brand rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-brand shadow-sm transition-colors" />
+            
+            {/* ✨ HELPER TEXT COM SUGESTÕES */}
+            <span className="block text-xs text-brand/80 mt-2 font-bold bg-brand/10 p-2.5 rounded-lg border border-brand/10">
+              💡 Sugestão: Corte (20 moedas), Barba (10 moedas), Corte e Barba (30 moedas), Platinado (30 moedas).
+            </span>
           </div>
         </div>
 

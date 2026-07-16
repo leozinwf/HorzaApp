@@ -3,10 +3,12 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabaseClient';
 import { useModal } from '../../context/ModalContext';
 import { Box, Plus, Trash2, Edit2, X, Check, Package, AlertTriangle, DollarSign, Search, Tag } from 'lucide-react';
+import toast from 'react-hot-toast'; // 👈 Importando o Toast
+import CurrencyInput from 'react-currency-input-field'; // 👈 Importando a máscara de moeda
 
 export default function AdminEstoque() {
   const { profile } = useAuth();
-  const { showConfirm, showAlert } = useModal();
+  const { showConfirm } = useModal(); // Removemos o showAlert daqui
 
   // Estados dos Dados
   const [produtos, setProdutos] = useState([]);
@@ -45,6 +47,7 @@ export default function AdminEstoque() {
       setProdutos(data || []);
     } catch (err) {
       console.error('Erro ao buscar estoque:', err.message);
+      toast.error('Erro ao carregar o estoque.');
     } finally {
       setLoading(false);
     }
@@ -54,11 +57,15 @@ export default function AdminEstoque() {
     e.preventDefault();
     if (!nomeProduto) return;
 
+    // Converte os valores da máscara para float compatível com o banco
+    const precoFormatado = parseFloat(precoVenda?.toString().replace(',', '.') || 0);
+    const custoFormatado = parseFloat(custoUnitario?.toString().replace(',', '.') || 0);
+
     const payload = {
       nome_produto: nomeProduto,
       categoria,
-      preco_venda: categoria === 'venda' ? parseFloat(precoVenda || 0) : 0,
-      custo_unitario: parseFloat(custoUnitario || 0),
+      preco_venda: categoria === 'venda' ? precoFormatado : 0,
+      custo_unitario: custoFormatado,
       quantidade_atual: parseInt(quantidadeAtual || 0),
       quantidade_minima: parseInt(quantidadeMinima || 0)
     };
@@ -71,20 +78,20 @@ export default function AdminEstoque() {
           .eq('id', editingProduto.id);
 
         if (error) throw error;
-        showAlert('Sucesso', 'Produto atualizado com sucesso!');
+        toast.success('Produto atualizado com sucesso!'); // 👈 Toast de Sucesso
       } else {
         const { error } = await supabase
           .from('produtos')
           .insert([{ ...payload, barbearia_id: profile.barbearia_id }]);
 
         if (error) throw error;
-        showAlert('Sucesso', 'Novo produto adicionado ao estoque!');
+        toast.success('Novo produto adicionado ao estoque!'); // 👈 Toast de Sucesso
       }
 
       fecharFormulario();
       buscarEstoque();
     } catch (err) {
-      showAlert('Erro', 'Erro ao salvar produto: ' + err.message);
+      toast.error('Erro ao salvar produto: ' + err.message); // 👈 Toast de Erro
     }
   };
 
@@ -103,20 +110,22 @@ export default function AdminEstoque() {
 
       // Atualiza o estado local rapidamente para uma UX instantânea
       setProdutos(produtos.map(p => p.id === produto.id ? { ...p, quantidade_atual: novaQtd } : p));
+      toast.success('Quantidade atualizada!', { position: 'bottom-right' });
     } catch (err) {
-      showAlert('Erro', 'Não foi possível alterar a quantidade: ' + err.message);
+      toast.error('Não foi possível alterar a quantidade.');
     }
   };
 
   const handleDeletarProduto = async (id) => {
+    // Mantemos o modal de confirmação para ações destrutivas, mas usamos toast para o resultado
     showConfirm('Excluir Produto', 'Tem certeza de que deseja remover este produto do estoque permanentemente?', async () => {
       try {
         const { error } = await supabase.from('produtos').delete().eq('id', id);
         if (error) throw error;
         buscarEstoque();
-        showAlert('Sucesso', 'Produto removido com sucesso.');
+        toast.success('Produto removido com sucesso.');
       } catch (err) {
-        showAlert('Erro', 'Falha ao deletar produto: ' + err.message);
+        toast.error('Falha ao deletar produto: ' + err.message);
       }
     });
   };
@@ -190,14 +199,14 @@ export default function AdminEstoque() {
           <div className="bg-green-500/10 p-3.5 rounded-xl text-green-500"><DollarSign size={22} /></div>
           <div>
             <p className="text-xs font-bold text-text-muted uppercase tracking-wider">Patrimônio em Estoque</p>
-            <p className="text-xl font-extrabold text-text-base mt-0.5">R$ {valorTotalEstoque.toFixed(2)}</p>
+            <p className="text-xl font-extrabold text-text-base mt-0.5">R$ {valorTotalEstoque.toFixed(2).replace('.', ',')}</p>
           </div>
         </div>
       </div>
 
       {/* FORMULÁRIO DE CADASTRO / EDIÇÃO */}
       {isFormOpen && (
-        <div className="bg-surface p-6 rounded-2xl border border-border-line shadow-sm mb-8 max-w-2xl animate-fadeIn">
+        <div className="bg-surface p-6 rounded-2xl border border-border-line shadow-sm mb-8 w-full max-w-4xl mx-auto animate-fadeIn"> {/* 👈 max-w-4xl para alargar o modal */}
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-lg font-bold flex items-center gap-2">
               {editingProduto ? <Edit2 size={20}/> : <Plus size={20}/>}
@@ -223,20 +232,45 @@ export default function AdminEstoque() {
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
-                <label className="block text-xs font-bold text-text-muted uppercase mb-1">Custo Unitário (R$)</label>
-                <input type="number" step="0.01" min="0" value={custoUnitario} onChange={(e) => setCustoUnitario(e.target.value)} className="w-full rounded-xl bg-background border border-border-line p-3 text-sm outline-none focus:border-brand" placeholder="0.00" />
+                <label className="block text-xs font-bold text-text-muted uppercase mb-1">Custo Unitário</label>
+                {/* 👈 Trocado para CurrencyInput */}
+                <CurrencyInput
+                  id="custo-unitario"
+                  name="custoUnitario"
+                  placeholder="R$ 0,00"
+                  decimalsLimit={2}
+                  prefix="R$ "
+                  decimalSeparator=","
+                  groupSeparator="."
+                  value={custoUnitario}
+                  onValueChange={(value) => setCustoUnitario(value)}
+                  className="w-full rounded-xl bg-background border border-border-line p-3 text-sm outline-none focus:border-brand"
+                />
               </div>
               <div>
-                <label className="block text-xs font-bold text-text-muted uppercase mb-1">Preço de Venda (R$)</label>
-                <input type="number" step="0.01" min="0" value={precoVenda} onChange={(e) => setPrecoVenda(e.target.value)} disabled={categoria === 'uso_interno'} className="w-full rounded-xl bg-background border border-border-line p-3 text-sm outline-none focus:border-brand disabled:opacity-40" placeholder="0.00" />
+                <label className="block text-xs font-bold text-text-muted uppercase mb-1">Preço de Venda</label>
+                {/* 👈 Trocado para CurrencyInput */}
+                <CurrencyInput
+                  id="preco-venda"
+                  name="precoVenda"
+                  placeholder="R$ 0,00"
+                  decimalsLimit={2}
+                  prefix="R$ "
+                  decimalSeparator=","
+                  groupSeparator="."
+                  value={precoVenda}
+                  onValueChange={(value) => setPrecoVenda(value)}
+                  disabled={categoria === 'uso_interno'}
+                  className="w-full rounded-xl bg-background border border-border-line p-3 text-sm outline-none focus:border-brand disabled:opacity-40"
+                />
               </div>
               <div>
                 <label className="block text-xs font-bold text-text-muted uppercase mb-1">Qtd Inicial</label>
-                <input required type="number" min="0" value={quantidadeAtual} onChange={(e) => setQuantidadeAtual(e.target.value)} className="w-full rounded-xl bg-background border border-border-line p-3 text-sm outline-none focus:border-brand" placeholder="0" />
+                <input required type="number" min="0" step="1" value={quantidadeAtual} onChange={(e) => setQuantidadeAtual(e.target.value)} className="w-full rounded-xl bg-background border border-border-line p-3 text-sm outline-none focus:border-brand" placeholder="0" />
               </div>
               <div>
-                <label className="block text-xs font-bold text-text-muted uppercase mb-1">Aviso Estoque Mínimo</label>
-                <input required type="number" min="0" value={quantidadeMinima} onChange={(e) => setQuantidadeMinima(e.target.value)} className="w-full rounded-xl bg-background border border-border-line p-3 text-sm outline-none focus:border-brand" placeholder="5" />
+                <label className="block text-xs font-bold text-text-muted uppercase mb-1">Estoque Mínimo</label>
+                <input required type="number" min="0" step="1" value={quantidadeMinima} onChange={(e) => setQuantidadeMinima(e.target.value)} className="w-full rounded-xl bg-background border border-border-line p-3 text-sm outline-none focus:border-brand" placeholder="5" />
               </div>
             </div>
 
@@ -315,9 +349,9 @@ export default function AdminEstoque() {
 
                       {/* Valores Financeiros */}
                       <td className="p-4 text-xs text-text-muted space-y-0.5">
-                        <p>Custo Unitário: <span className="font-bold text-text-base">R$ {Number(prod.custo_unitario || 0).toFixed(2)}</span></p>
+                        <p>Custo Unitário: <span className="font-bold text-text-base">R$ {Number(prod.custo_unitario || 0).toFixed(2).replace('.', ',')}</span></p>
                         {prod.categoria === 'venda' && (
-                          <p>Preço de Venda: <span className="font-bold text-brand">R$ {Number(prod.preco_venda || 0).toFixed(2)}</span></p>
+                          <p>Preço de Venda: <span className="font-bold text-brand">R$ {Number(prod.preco_venda || 0).toFixed(2).replace('.', ',')}</span></p>
                         )}
                       </td>
 
