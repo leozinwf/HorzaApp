@@ -1,37 +1,29 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useModal } from '../../context/ModalContext';
-import { X, Eye, EyeOff, Mail, Lock, User, Phone, LogIn, Store, Briefcase } from 'lucide-react';
+import { X, Eye, EyeOff, Mail, Lock, User, Phone, LogIn, Store } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
   const { showAlert } = useModal();
-  const [mode, setMode] = useState(initialMode); // 'login', 'register', 'forgot_password', 'update_password'
-  const [tipoCadastro, setTipoCadastro] = useState('cliente'); // 'cliente' ou 'empresa'
+  const navigate = useNavigate();
+  const [mode, setMode] = useState(initialMode);
   
   // Estados do Formulário
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   
-  // Campos Usuário
+  // Campos Usuário Cliente
   const [nome, setNome] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
-  const [cpf, setCpf] = useState('');
 
-  // Campos Empresa
-  const [nomeBarbearia, setNomeBarbearia] = useState('');
-  const [slugBarbearia, setSlugBarbearia] = useState('');
-  const [cnpj, setCnpj] = useState('');
-  const [cidade, setCidade] = useState('');
-  const [estado, setEstado] = useState('');
-  
   // Controles de UI
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // Formatação de WhatsApp (Mascara: (DD) 9XXXX-XXXX)
   const handlePhoneChange = (e) => {
     let value = e.target.value.replace(/\D/g, '');
     if (value.length > 11) value = value.slice(0, 11);
@@ -40,7 +32,6 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
     setWhatsapp(value);
   };
 
-  // Resetar estados
   useEffect(() => {
     if (isOpen) {
       setMode(initialMode);
@@ -52,7 +43,6 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
 
   if (!isOpen) return null;
 
-  // Validações da Senha
   const validacoesSenha = {
     minimo: password.length >= 6,
     maiuscula: /[A-Z]/.test(password),
@@ -61,46 +51,19 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
   const senhaValida = validacoesSenha.minimo && validacoesSenha.maiuscula && validacoesSenha.especial;
   const senhasDiferentes = (mode === 'register' || mode === 'update_password') && confirmPassword.length > 0 && password !== confirmPassword;
 
-  // 1. FLUXO DE LOGIN OU CADASTRO
   const handleAuth = async (e) => {
     e.preventDefault();
     setError('');
 
     if (mode === 'register') {
-      if (!senhaValida) {
-        setError('A senha não atende aos requisitos mínimos.');
-        return;
-      }
-      if (senhasDiferentes) {
-        setError('As senhas não coincidem.');
-        return;
-      }
+      if (!senhaValida) return setError('A senha não atende aos requisitos mínimos.');
+      if (senhasDiferentes) return setError('As senhas não coincidem.');
     }
 
     setLoading(true);
 
     try {
       if (mode === 'register') {
-        
-        let novaBarbeariaId = null;
-
-        // Se for criar empresa, criamos o registro pendente primeiro
-        if (tipoCadastro === 'empresa') {
-          const { data: barbData, error: barbError } = await supabase.from('barbearias').insert([{
-            nome: nomeBarbearia,
-            slug: slugBarbearia.toLowerCase(),
-            cnpj: cnpj,
-            cidade: cidade,
-            estado: estado,
-            telefone: whatsapp,
-            plano_ativo: 'pendente_aprovacao'
-          }]).select('id').single();
-
-          if (barbError) throw new Error('Este SLUG já está em uso ou ocorreu um erro com os dados da empresa.');
-          novaBarbeariaId = barbData.id;
-        }
-
-        // Criar usuário no Auth
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
           password
@@ -109,32 +72,23 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
         if (signUpError) throw signUpError;
 
         if (data?.user) {
-          // Inserir os detalhes manuais no banco public.usuarios
           const { error: profileError } = await supabase.from('usuarios').insert([{
             id: data.user.id,
             nome: nome,
             email: email,
             whatsapp: whatsapp,
-            cpf: cpf,
-            role: tipoCadastro === 'empresa' ? 'admin' : 'cliente',
-            barbearia_id: novaBarbeariaId // Será null para clientes globais
+            role: 'cliente'
           }]);
 
           if (profileError) throw profileError;
 
-          if (tipoCadastro === 'empresa') {
-            showAlert('Cadastro Enviado!', 'Uma pessoa da equipe do Horza app vai verificar o cadastro e você receberá um e-mail com a confirmação do cadastro.', 'success');
-          } else {
-            showAlert('Bem-vindo!', 'Conta criada com sucesso. Você já pode realizar seus agendamentos.', 'success');
-          }
+          showAlert('Bem-vindo!', 'Conta criada com sucesso. Você já pode realizar seus agendamentos.', 'success');
           onClose();
         }
       } else {
         const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;
-        if (data?.user) {
-          onClose();
-        }
+        if (data?.user) onClose();
       }
     } catch (err) {
       setError(err.message === 'Invalid login credentials' ? 'E-mail ou senha incorretos.' : err.message);
@@ -143,7 +97,6 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
     }
   };
 
-  // (O resto dos Handlers de Recuperação de Senha permanecem iguais)
   const handleForgotPassword = async (e) => {
     e.preventDefault();
     setError('');
@@ -154,7 +107,7 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
       showAlert('E-mail enviado!', 'Verifique a sua caixa de entrada para redefinir a sua senha.', 'success');
       setMode('login');
     } catch (err) {
-      setError('Erro ao enviar e-mail de recuperação: ' + err.message);
+      setError('Erro ao enviar e-mail: ' + err.message);
     } finally { setLoading(false); }
   };
 
@@ -173,19 +126,19 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
     } finally { setLoading(false); }
   };
 
-  const handleBackdropClick = (e) => {
-    if (e.target === e.currentTarget) onClose();
+  const handleIrParaCadastroEmpresa = () => {
+    onClose();
+    navigate('/cadastro-barbearia');
   };
 
   return (
-    <div onClick={handleBackdropClick} className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn overflow-y-auto">
+    <div onClick={(e) => e.target === e.currentTarget && onClose()} className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn overflow-y-auto">
       <div className="bg-surface border border-border-line w-full max-w-lg rounded-3xl p-6 md:p-8 shadow-2xl relative my-auto animate-slideUp">
         
         <button onClick={onClose} className="absolute right-4 top-4 text-text-muted hover:text-text-base p-2 rounded-full hover:bg-background transition-colors cursor-pointer">
           <X size={20} />
         </button>
 
-        {/* CABEÇALHOS DINÂMICOS */}
         <div className="mb-6 text-center">
           <div className="mx-auto h-12 w-12 bg-brand/10 text-brand rounded-2xl flex items-center justify-center mb-4">
             {mode === 'update_password' ? <Lock size={24} /> : <LogIn size={24} />}
@@ -208,27 +161,6 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
           </div>
         )}
 
-        {/* TABS DE CADASTRO (CLIENTE VS EMPRESA) */}
-        {mode === 'register' && (
-          <div className="flex bg-background border border-border-line rounded-xl p-1 mb-6">
-            <button 
-              type="button"
-              onClick={() => setTipoCadastro('cliente')}
-              className={`flex-1 py-2 text-sm font-bold rounded-lg flex items-center justify-center gap-2 transition-colors ${tipoCadastro === 'cliente' ? 'bg-surface text-brand shadow-sm' : 'text-text-muted hover:text-text-base'}`}
-            >
-              <User size={16} /> Sou Cliente
-            </button>
-            <button 
-              type="button"
-              onClick={() => setTipoCadastro('empresa')}
-              className={`flex-1 py-2 text-sm font-bold rounded-lg flex items-center justify-center gap-2 transition-colors ${tipoCadastro === 'empresa' ? 'bg-surface text-brand shadow-sm' : 'text-text-muted hover:text-text-base'}`}
-            >
-              <Store size={16} /> Sou Empresa
-            </button>
-          </div>
-        )}
-
-        {/* FORMULÁRIO */}
         <form onSubmit={mode === 'update_password' ? handleUpdatePassword : mode === 'forgot_password' ? handleForgotPassword : handleAuth} className="space-y-4">
           
           {mode === 'register' && (
@@ -237,29 +169,9 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
                 <User size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
                 <input type="text" required placeholder="Nome Completo" value={nome} onChange={(e) => setNome(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" />
               </div>
-              <div className="relative">
+              <div className="relative md:col-span-2">
                 <Phone size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
                 <input type="tel" required placeholder="WhatsApp" value={whatsapp} onChange={handlePhoneChange} className="w-full pl-10 pr-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" />
-              </div>
-              <div className="relative">
-                <Briefcase size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
-                <input type="text" placeholder="CPF (Opcional)" value={cpf} onChange={(e) => setCpf(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" />
-              </div>
-            </div>
-          )}
-
-          {/* CAMPOS ESPECÍFICOS DE EMPRESA */}
-          {mode === 'register' && tipoCadastro === 'empresa' && (
-            <div className="p-4 bg-brand/5 border border-brand/20 rounded-xl space-y-4 mt-4">
-              <h4 className="text-sm font-black text-brand uppercase tracking-wider mb-2 flex items-center gap-2">
-                <Store size={16} /> Dados da Barbearia
-              </h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input type="text" required placeholder="Nome da Barbearia" value={nomeBarbearia} onChange={(e) => setNomeBarbearia(e.target.value)} className="w-full px-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" />
-                <input type="text" required placeholder="Slug URL (ex: minha-barbearia)" value={slugBarbearia} onChange={(e) => setSlugBarbearia(e.target.value)} className="w-full px-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none lowercase" />
-                <input type="text" required placeholder="CNPJ" value={cnpj} onChange={(e) => setCnpj(e.target.value)} className="w-full px-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none md:col-span-2" />
-                <input type="text" required placeholder="Cidade" value={cidade} onChange={(e) => setCidade(e.target.value)} className="w-full px-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" />
-                <input type="text" required placeholder="Estado (UF)" value={estado} onChange={(e) => setEstado(e.target.value)} maxLength="2" className="w-full px-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none uppercase" />
               </div>
             </div>
           )}
@@ -275,11 +187,8 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
             <div className="relative">
               <Lock size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
               <input 
-                type={showPassword ? 'text' : 'password'} 
-                required 
-                placeholder="Senha" 
-                value={password} 
-                onChange={(e) => setPassword(e.target.value)} 
+                type={showPassword ? 'text' : 'password'} required placeholder="Senha" 
+                value={password} onChange={(e) => setPassword(e.target.value)} 
                 className="w-full pl-10 pr-10 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" 
               />
               <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-3.5 text-text-muted hover:text-brand transition-colors cursor-pointer" tabIndex="-1">
@@ -288,19 +197,12 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
             </div>
           )}
 
-          {/* VALIDAÇÕES VISUAIS DA SENHA */}
           {(mode === 'register' || mode === 'update_password') && (
             <div className="px-2">
               <ul className="text-xs space-y-1 mt-2">
-                <li className={`flex items-center gap-2 font-bold ${validacoesSenha.minimo ? 'text-green-500' : 'text-text-muted'}`}>
-                  {validacoesSenha.minimo ? '✓' : '✖'} Mínimo 6 dígitos
-                </li>
-                <li className={`flex items-center gap-2 font-bold ${validacoesSenha.maiuscula ? 'text-green-500' : 'text-text-muted'}`}>
-                  {validacoesSenha.maiuscula ? '✓' : '✖'} Pelo menos 1 letra maiúscula
-                </li>
-                <li className={`flex items-center gap-2 font-bold ${validacoesSenha.especial ? 'text-green-500' : 'text-text-muted'}`}>
-                  {validacoesSenha.especial ? '✓' : '✖'} Pelo menos 1 caractere especial
-                </li>
+                <li className={`flex items-center gap-2 font-bold ${validacoesSenha.minimo ? 'text-green-500' : 'text-text-muted'}`}>{validacoesSenha.minimo ? '✓' : '✖'} Mínimo 6 dígitos</li>
+                <li className={`flex items-center gap-2 font-bold ${validacoesSenha.maiuscula ? 'text-green-500' : 'text-text-muted'}`}>{validacoesSenha.maiuscula ? '✓' : '✖'} Pelo menos 1 letra maiúscula</li>
+                <li className={`flex items-center gap-2 font-bold ${validacoesSenha.especial ? 'text-green-500' : 'text-text-muted'}`}>{validacoesSenha.especial ? '✓' : '✖'} Pelo menos 1 caractere especial</li>
               </ul>
             </div>
           )}
@@ -310,11 +212,8 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
               <div className="relative">
                 <Lock size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
                 <input 
-                  type={showConfirmPassword ? 'text' : 'password'} 
-                  required 
-                  placeholder="Confirmar Senha" 
-                  value={confirmPassword} 
-                  onChange={(e) => setConfirmPassword(e.target.value)} 
+                  type={showConfirmPassword ? 'text' : 'password'} required placeholder="Confirmar Senha" 
+                  value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} 
                   className={`w-full pl-10 pr-10 py-3 bg-background border rounded-xl text-sm outline-none transition-colors ${senhasDiferentes ? 'border-red-500 focus:border-red-500' : 'border-border-line focus:border-brand'}`} 
                 />
               </div>
@@ -331,7 +230,7 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
           )}
 
           <button type="submit" disabled={loading} className="w-full bg-brand text-white font-bold py-3.5 rounded-xl text-sm hover:bg-brand-hover transition-colors shadow-md flex justify-center mt-4 cursor-pointer">
-            {loading ? <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : (mode === 'login' ? 'Entrar' : mode === 'forgot_password' ? 'Recuperar Senha' : 'Confirmar e Salvar')}
+            {loading ? <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : (mode === 'login' ? 'Entrar' : mode === 'forgot_password' ? 'Recuperar Senha' : 'Criar Minha Conta')}
           </button>
 
           {mode !== 'update_password' && mode !== 'forgot_password' && (
@@ -343,6 +242,16 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
             </div>
           )}
         </form>
+
+        {/* LINK PARA CADASTRO DE BARBEARIAS */}
+        <div className="mt-6 text-center text-sm border-t border-border-line pt-6">
+          <p className="text-text-muted font-bold">
+            É dono de uma barbearia?{' '}
+            <button onClick={handleIrParaCadastroEmpresa} className="text-brand hover:underline flex items-center justify-center gap-1 mx-auto mt-2 cursor-pointer">
+              <Store size={16} /> Cadastre seu negócio aqui
+            </button>
+          </p>
+        </div>
 
       </div>
     </div>

@@ -55,18 +55,25 @@ export const AuthProvider = ({ children }) => {
   // 3. Função dedicada para buscar o Perfil com base no ID
   const fetchProfile = async (userId) => {
     try {
-      // Vai buscar os dados do utilizador
-      const { data: userData, error: userError } = await supabase
+      // Usamos .select() sem .single() para evitar o erro se não encontrar nada ainda
+      const { data, error: userError } = await supabase
         .from('usuarios')
         .select('*')
-        .eq('id', userId)
-        .single();
+        .eq('id', userId);
       
       if (userError) throw userError;
+
+      // Se o array estiver vazio, significa que o registro ainda não existe (novo cadastro)
+      if (!data || data.length === 0) {
+        console.warn('Perfil ainda não criado para este usuário.');
+        setProfile(null);
+        return;
+      }
+
+      const userData = data[0];
       setProfile(userData);
 
-      // --- INÍCIO DA ALTERAÇÃO: Whitelabel (Cores Dinâmicas) ---
-      // Se o utilizador estiver associado a uma barbearia, vai buscar a cor
+      // --- Whitelabel (Cores Dinâmicas) ---
       if (userData?.barbearia_id) {
         const { data: barbeariaData, error: barbeariaError } = await supabase
           .from('barbearias')
@@ -78,7 +85,6 @@ export const AuthProvider = ({ children }) => {
           aplicarCorDaBarbearia(barbeariaData.cor_primaria);
         }
       }
-      // --- FIM DA ALTERAÇÃO ---
 
     } catch (error) {
       console.error('Erro ao buscar o perfil do utilizador:', error.message);

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../services/supabaseClient';
+import { estoqueService } from '../../services/estoqueService';
 import { useModal } from '../../context/ModalContext';
 import { Box, Plus, Trash2, Edit2, X, Check, Package, AlertTriangle, DollarSign, Search, Tag } from 'lucide-react';
 
@@ -35,14 +35,8 @@ export default function AdminEstoque() {
   const buscarEstoque = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('produtos')
-        .select('*')
-        .eq('barbearia_id', profile.barbearia_id)
-        .order('nome_produto', { ascending: true });
-
-      if (error) throw error;
-      setProdutos(data || []);
+      const data = await estoqueService.obterProdutos(profile.barbearia_id);
+      setProdutos(data);
     } catch (err) {
       console.error('Erro ao buscar estoque:', err.message);
     } finally {
@@ -65,19 +59,10 @@ export default function AdminEstoque() {
 
     try {
       if (editingProduto) {
-        const { error } = await supabase
-          .from('produtos')
-          .update(payload)
-          .eq('id', editingProduto.id);
-
-        if (error) throw error;
+        await estoqueService.atualizarProduto(editingProduto.id, payload);
         showAlert('Sucesso', 'Produto atualizado com sucesso!');
       } else {
-        const { error } = await supabase
-          .from('produtos')
-          .insert([{ ...payload, barbearia_id: profile.barbearia_id }]);
-
-        if (error) throw error;
+        await estoqueService.adicionarProduto({ ...payload, barbearia_id: profile.barbearia_id });
         showAlert('Sucesso', 'Novo produto adicionado ao estoque!');
       }
 
@@ -88,18 +73,21 @@ export default function AdminEstoque() {
     }
   };
 
-  // 🚀 Ajuste rápido de quantidade (+1 ou -1) direto na tabela
+  // 🚀 Ajuste rápido com gravação na tabela de 'movimentacao_estoque'
   const handleAjustarQuantidade = async (produto, mudanca) => {
-    const novaQtd = produto.quantidade_atual + mudanca;
-    if (novaQtd < 0) return;
+    if (produto.quantidade_atual + mudanca < 0) return;
 
     try {
-      const { error } = await supabase
-        .from('produtos')
-        .update({ quantidade_atual: novaQtd })
-        .eq('id', produto.id);
-
-      if (error) throw error;
+      const tipoMovimentacao = mudanca > 0 ? 'entrada' : 'saida';
+      
+      const novaQtd = await estoqueService.registrarMovimentacao(
+        produto.id,
+        profile.id, // ID do usuario logado (quem fez a acao)
+        tipoMovimentacao,
+        produto.quantidade_atual,
+        mudanca,
+        'Ajuste rápido'
+      );
 
       // Atualiza o estado local rapidamente para uma UX instantânea
       setProdutos(produtos.map(p => p.id === produto.id ? { ...p, quantidade_atual: novaQtd } : p));
@@ -111,8 +99,7 @@ export default function AdminEstoque() {
   const handleDeletarProduto = async (id) => {
     showConfirm('Excluir Produto', 'Tem certeza de que deseja remover este produto do estoque permanentemente?', async () => {
       try {
-        const { error } = await supabase.from('produtos').delete().eq('id', id);
-        if (error) throw error;
+        await estoqueService.deletarProduto(id);
         buscarEstoque();
         showAlert('Sucesso', 'Produto removido com sucesso.');
       } catch (err) {

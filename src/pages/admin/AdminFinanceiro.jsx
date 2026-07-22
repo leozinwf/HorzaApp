@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../services/supabaseClient';
+import { financeiroService } from '../../services/financeiroService';
 import { useModal } from '../../context/ModalContext';
 import { 
   TrendingUp, TrendingDown, Plus, Trash2, Edit2,
@@ -80,31 +80,19 @@ export default function AdminFinanceiro() {
       const dataInicio = new Date(anoFiltro, mesFiltro, 1).toISOString();
       const dataFim = new Date(anoFiltro, mesFiltro + 1, 0, 23, 59, 59, 999).toISOString();
 
-      const { data: transData } = await supabase
-        .from('transacoes')
-        .select('*, funcionario:usuarios(nome)')
-        .eq('barbearia_id', profile.barbearia_id)
-        .gte('data_transacao', dataInicio)
-        .lte('data_transacao', dataFim)
-        .order('data_transacao', { ascending: false });
-      setTransacoes(transData || []);
+      const [transData, eqData, catData] = await Promise.all([
+        financeiroService.obterTransacoes(profile.barbearia_id, dataInicio, dataFim),
+        financeiroService.obterEquipe(profile.barbearia_id),
+        financeiroService.obterCategorias(profile.barbearia_id)
+      ]);
 
-      const { data: eqData } = await supabase
-        .from('usuarios')
-        .select('id, nome')
-        .eq('barbearia_id', profile.barbearia_id)
-        .in('role', ['admin', 'gerente', 'funcionario']);
-      setEquipe(eqData || []);
-
-      const { data: catData } = await supabase
-        .from('categorias_personalizadas')
-        .select('*')
-        .eq('barbearia_id', profile.barbearia_id)
-        .order('nome', { ascending: true });
-      setCategoriasCustom(catData || []);
+      setTransacoes(transData);
+      setEquipe(eqData);
+      setCategoriasCustom(catData);
 
     } catch (err) {
       console.error(err);
+      showAlert('Erro', 'Não foi possível carregar os dados financeiros.', 'error');
     } finally {
       setLoading(false);
     }
@@ -138,7 +126,7 @@ export default function AdminFinanceiro() {
 
     try {
       if (editingTransacao) {
-        await supabase.from('transacoes').update(basePayload).eq('id', editingTransacao.id);
+        await financeiroService.atualizarTransacao(editingTransacao.id, basePayload);
         showAlert('Sucesso', 'Lançamento atualizado com sucesso!', 'success');
       } else {
         if (recorrente) {
@@ -153,10 +141,10 @@ export default function AdminFinanceiro() {
               data_transacao: dataBase.toISOString()
             });
           }
-          await supabase.from('transacoes').insert(insercoesMultiplas);
+          await financeiroService.adicionarTransacoesMultiplas(insercoesMultiplas);
           showAlert('Sucesso', 'Lançamento fixo programado para os próximos 2 anos!', 'success');
         } else {
-          await supabase.from('transacoes').insert([basePayload]);
+          await financeiroService.adicionarTransacaoUnica(basePayload);
           showAlert('Sucesso', 'Movimentação financeira registada!', 'success');
         }
       }
@@ -171,7 +159,7 @@ export default function AdminFinanceiro() {
   const handleMudarStatusAoClicar = async (transacao) => {
     const novoStatus = transacao.status === 'concluido' ? 'pendente' : 'concluido';
     try {
-      await supabase.from('transacoes').update({ status: novoStatus }).eq('id', transacao.id);
+      await financeiroService.atualizarStatus(transacao.id, novoStatus);
       setTransacoes(transacoes.map(t => t.id === transacao.id ? { ...t, status: novoStatus } : t));
     } catch (err) {
       showAlert('Erro', err.message, 'error');
@@ -183,7 +171,7 @@ export default function AdminFinanceiro() {
       setDeleteRecurringModal({ isOpen: true, transacao: t });
     } else {
       showConfirm('Remover Lançamento', 'Deseja apagar este registo permanentemente?', async () => {
-        await supabase.from('transacoes').delete().eq('id', t.id);
+        await financeiroService.deletarTransacaoUnica(t.id);
         carregarPainelFinanceiro();
       });
     }
@@ -193,13 +181,11 @@ export default function AdminFinanceiro() {
     try {
       const t = deleteRecurringModal.transacao;
       if (opcao === 'unica') {
-        await supabase.from('transacoes').delete().eq('id', t.id);
+        await financeiroService.deletarTransacaoUnica(t.id);
       } else if (opcao === 'proximas') {
-        await supabase.from('transacoes').delete()
-          .eq('grupo_recorrencia', t.grupo_recorrencia)
-          .gte('data_transacao', t.data_transacao);
+        await financeiroService.deletarTransacoesFuturas(t.grupo_recorrencia, t.data_transacao);
       } else if (opcao === 'todas') {
-        await supabase.from('transacoes').delete().eq('grupo_recorrencia', t.grupo_recorrencia);
+        await financeiroService.deletarTransacoesGrupo(t.grupo_recorrencia);
       }
       setDeleteRecurringModal({ isOpen: false, transacao: null });
       carregarPainelFinanceiro();
@@ -238,16 +224,19 @@ export default function AdminFinanceiro() {
 
     try {
       if (editingCategoria) {
-        if (editingCategoria.nome !== novaCatNome) {
-          await supabase.from('transacoes').update({ categoria: novaCatNome })
-            .eq('categoria', editingCategoria.nome).eq('barbearia_id', profile.barbearia_id);
-        }
-        await supabase.from('categorias_personalizadas').update({ nome: novaCatNome, tipo: novaCatTipo }).eq('id', editingCategoria.id);
+        await financeiroService.atualizarCategoria(
+          editingCategoria.id, 
+          { nome: novaCatNome, tipo: novaCatTipo }, 
+          editingCategoria.nome, 
+          profile.barbearia_id
+        );
         showAlert('Sucesso', 'Categoria atualizada!', 'success');
       } else {
-        await supabase.from('categorias_personalizadas').insert([{
-          barbearia_id: profile.barbearia_id, nome: novaCatNome, tipo: novaCatTipo
-        }]);
+        await financeiroService.adicionarCategoria({
+          barbearia_id: profile.barbearia_id, 
+          nome: novaCatNome, 
+          tipo: novaCatTipo
+        });
         showAlert('Sucesso', 'Nova categoria criada!', 'success');
       }
       fecharFormularioCategoria();
@@ -270,14 +259,13 @@ export default function AdminFinanceiro() {
   };
 
   const handleVerificarDelecaoCategoria = async (cat) => {
-    const { data: emUso } = await supabase.from('transacoes').select('id')
-      .eq('categoria', cat.nome).eq('barbearia_id', profile.barbearia_id);
+    const emUso = await financeiroService.verificarUsoCategoria(cat.nome, profile.barbearia_id);
 
-    if (emUso && emUso.length > 0) {
+    if (emUso) {
       setMigrationModal({ isOpen: true, oldCat: cat, newCatName: '' });
     } else {
       showConfirm('Remover Categoria', 'Deseja excluir esta categoria do seu catálogo?', async () => {
-        await supabase.from('categorias_personalizadas').delete().eq('id', cat.id);
+        await financeiroService.deletarCategoria(cat.id);
         carregarPainelFinanceiro();
         showAlert('Sucesso', 'Categoria removida.', 'success');
       });
@@ -289,9 +277,12 @@ export default function AdminFinanceiro() {
     if (!migrationModal.newCatName) return;
 
     try {
-      await supabase.from('transacoes').update({ categoria: migrationModal.newCatName })
-        .eq('categoria', migrationModal.oldCat.nome).eq('barbearia_id', profile.barbearia_id);
-      await supabase.from('categorias_personalizadas').delete().eq('id', migrationModal.oldCat.id);
+      await financeiroService.migrarEExcluirCategoria(
+        migrationModal.oldCat.nome, 
+        migrationModal.newCatName, 
+        migrationModal.oldCat.id, 
+        profile.barbearia_id
+      );
 
       showAlert('Sucesso', 'Lançamentos transferidos e categoria excluída!', 'success');
       setMigrationModal({ isOpen: false, oldCat: null, newCatName: '' });

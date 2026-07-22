@@ -18,6 +18,7 @@ import AreaCliente from './pages/client/AreaCliente';
 
 // --- Imports das Páginas do Barbeiro ---
 import AgendaBarbeiro from './pages/barber/AgendaBarbeiro';
+import CadastroBarbearia from './pages/barber/CadastroBarbearia';
 
 // --- Imports das Páginas de Admin ---
 import DashboardMaster from './pages/admin/DashboardMaster';
@@ -86,6 +87,7 @@ function AppContent() {
       <main className="pb-24 md:pb-0 min-h-screen bg-background">
           <Routes>
             <Route path="/" element={<HomeMarketplace />} />
+            <Route path="/cadastro-barbearia" element={<CadastroBarbearia />} />
             <Route path="/master" element={<SuperAdminRoute><DashboardMaster /></SuperAdminRoute>} />
 
             <Route path="/area-cliente" element={<ProtectedRoute allowedRoles={['cliente', 'admin', 'gerente', 'funcionario']}><AreaCliente /></ProtectedRoute>}/>
@@ -115,6 +117,7 @@ function AppContent() {
       </main>
 
       <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} initialMode={loginModalMode} />
+        
     </>
   );
 }
