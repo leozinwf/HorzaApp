@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
-import { Shield, Users, CalendarCheck, TrendingUp, Edit, ExternalLink, X, MapPin, Building2, Crown, Search, CheckCircle, Ban, Filter } from 'lucide-react';
+import { Shield, Users, CalendarCheck, TrendingUp, Edit, ExternalLink, X, MapPin, Building2, Crown, Search, CheckCircle, Ban, Filter, Trash2, Settings } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import toast from 'react-hot-toast';
 
 export default function DashboardMaster() {
   const [abaAtiva, setAbaAtiva] = useState('empresas'); // 'empresas', 'agendamentos', 'usuarios'
@@ -26,6 +27,10 @@ export default function DashboardMaster() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [empresaEditando, setEmpresaEditando] = useState(null);
   const [salvando, setSalvando] = useState(false);
+
+  // Estados do Modal de Exclusão de Usuário
+  const [isModalDeleteUserOpen, setIsModalDeleteUserOpen] = useState(false);
+  const [usuarioParaDeletar, setUsuarioParaDeletar] = useState(null);
 
   useEffect(() => {
     carregarDados();
@@ -73,19 +78,23 @@ export default function DashboardMaster() {
   // ----- Ações de Barbearia -----
   const aprovarBarbearia = async (id) => {
     if(!window.confirm("Aprovar essa barbearia?")) return;
-    await supabase.from('barbearias').update({ plano_ativo: 'free' }).eq('id', id);
+    // Atualizamos o plano_ativo e o status para integrar com o AdminLayout
+    await supabase.from('barbearias').update({ plano_ativo: 'free', status: 'aprovada' }).eq('id', id);
+    toast.success('Barbearia aprovada com sucesso!');
     carregarDados();
   };
 
   const recusarBarbearia = async (id) => {
     if(!window.confirm("Isso irá apagar a barbearia. Tem certeza?")) return;
     await supabase.from('barbearias').delete().eq('id', id);
+    toast.success('Barbearia recusada/apagada.');
     carregarDados();
   };
 
   const togglePremium = async (id, planoAtual) => {
     const novoPlano = planoAtual === 'premium' ? 'free' : 'premium';
     await supabase.from('barbearias').update({ plano_ativo: novoPlano }).eq('id', id);
+    toast.success(`Plano alterado para ${novoPlano.toUpperCase()}`);
     carregarDados();
   };
 
@@ -93,7 +102,44 @@ export default function DashboardMaster() {
   const toggleBanirUsuario = async (id, ativo) => {
     if(!window.confirm(`Deseja ${ativo ? 'BANIR' : 'DESBANIR'} este usuário?`)) return;
     await supabase.from('usuarios').update({ ativo: !ativo }).eq('id', id);
+    toast.success(`Usuário ${ativo ? 'banido' : 'desbanido'} com sucesso!`);
     carregarDados();
+  };
+
+  const abrirModalDeletarUsuario = (usuario) => {
+    setUsuarioParaDeletar(usuario);
+    setIsModalDeleteUserOpen(true);
+  };
+
+  const confirmarExclusaoUsuario = async (comHistorico) => {
+    if (!usuarioParaDeletar) return;
+    setLoading(true);
+
+    try {
+      if (comHistorico) {
+        // Excluir todos os agendamentos onde ele é cliente ou barbeiro
+        await supabase.from('agendamentos').delete().or(`cliente_id.eq.${usuarioParaDeletar.id},barbeiro_id.eq.${usuarioParaDeletar.id}`);
+      } else {
+        // Desvincular agendamentos para manter o histórico (caso o banco permita null)
+        await supabase.from('agendamentos').update({ cliente_id: null }).eq('cliente_id', usuarioParaDeletar.id);
+        await supabase.from('agendamentos').update({ barbeiro_id: null }).eq('barbeiro_id', usuarioParaDeletar.id);
+      }
+      
+      // Excluir o usuário da tabela 'usuarios'
+      const { error } = await supabase.from('usuarios').delete().eq('id', usuarioParaDeletar.id);
+      
+      if (error) throw error;
+      
+      toast.success('Usuário excluído com sucesso!');
+      setIsModalDeleteUserOpen(false);
+      setUsuarioParaDeletar(null);
+      carregarDados();
+    } catch (err) {
+      toast.error('Erro ao excluir usuário. Verifique as restrições do banco (FKs).');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // ----- Funções do Modal de Edição/Criação Manual -----
@@ -101,7 +147,7 @@ export default function DashboardMaster() {
     if (empresa) {
       setEmpresaEditando({ ...empresa });
     } else {
-      setEmpresaEditando({ nome: '', slug: '', cnpj: '', telefone: '', cidade: '', estado: '', plano_ativo: 'free' });
+      setEmpresaEditando({ nome: '', slug: '', cnpj: '', telefone: '', cidade: '', estado: '', plano_ativo: 'free', status: 'aprovada' });
     }
     setIsModalOpen(true);
   };
@@ -129,11 +175,11 @@ export default function DashboardMaster() {
 
       if (error) throw error;
 
-      alert(`Empresa ${isNew ? 'criada' : 'atualizada'} com sucesso!`);
+      toast.success(`Empresa ${isNew ? 'criada' : 'atualizada'} com sucesso!`);
       fecharModal();
       carregarDados();
     } catch (err) {
-      alert('Erro ao salvar: ' + err.message);
+      toast.error('Erro ao salvar: ' + err.message);
     } finally {
       setSalvando(false);
     }
@@ -220,54 +266,57 @@ export default function DashboardMaster() {
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                   {empresas.filter(e => e.nome.toLowerCase().includes(buscaEmpresa.toLowerCase())).map((emp) => (
-                    <div key={emp.id} className="bg-surface border border-border-line p-6 rounded-3xl shadow-sm hover:border-brand/40 transition-colors">
-                      <div className="flex justify-between items-start mb-4">
-                        <div>
-                          <h3 className="text-xl font-black text-text-base flex items-center gap-2">
-                            {emp.nome} 
-                            {emp.plano_ativo === 'premium' && <Crown size={18} className="text-amber-500" />}
-                          </h3>
-                          <p className="text-sm text-text-muted flex items-center gap-1 mt-1">
-                            <MapPin size={14} /> {emp.cidade ? `${emp.cidade} - ${emp.estado}` : 'Sem endereço'}
-                          </p>
+                    <div key={emp.id} className="bg-surface border border-border-line p-6 rounded-3xl shadow-sm hover:border-brand/40 transition-colors flex flex-col justify-between">
+                      <div>
+                        <div className="flex justify-between items-start mb-4">
+                          <div>
+                            <h3 className="text-xl font-black text-text-base flex items-center gap-2">
+                              {emp.nome} 
+                              {emp.plano_ativo === 'premium' && <Crown size={18} className="text-amber-500" />}
+                            </h3>
+                            <p className="text-sm text-text-muted flex items-center gap-1 mt-1">
+                              <MapPin size={14} /> {emp.cidade ? `${emp.cidade} - ${emp.estado}` : 'Sem endereço'}
+                            </p>
+                          </div>
+                          {emp.plano_ativo === 'pendente_aprovacao' || emp.status === 'pendente' ? (
+                            <span className="text-[10px] font-black uppercase px-2.5 py-1.5 rounded-lg tracking-wider bg-orange-500/10 text-orange-500 border border-orange-500/20">Pendente</span>
+                          ) : (
+                            <button onClick={() => togglePremium(emp.id, emp.plano_ativo)} className={`text-[10px] font-black uppercase px-2.5 py-1.5 rounded-lg tracking-wider cursor-pointer transition-colors ${emp.plano_ativo === 'premium' ? 'bg-amber-500/10 text-amber-500 hover:bg-amber-500/20' : 'bg-background border border-border-line text-text-muted hover:border-brand'}`}>
+                              {emp.plano_ativo === 'premium' ? 'Remover Premium' : 'Ativar Premium'}
+                            </button>
+                          )}
                         </div>
-                        {emp.plano_ativo === 'pendente_aprovacao' ? (
-                          <span className="text-[10px] font-black uppercase px-2.5 py-1.5 rounded-lg tracking-wider bg-orange-500/10 text-orange-500 border border-orange-500/20">Pendente</span>
-                        ) : (
-                          <button onClick={() => togglePremium(emp.id, emp.plano_ativo)} className={`text-[10px] font-black uppercase px-2.5 py-1.5 rounded-lg tracking-wider cursor-pointer transition-colors ${emp.plano_ativo === 'premium' ? 'bg-amber-500/10 text-amber-500 hover:bg-amber-500/20' : 'bg-background border border-border-line text-text-muted hover:border-brand'}`}>
-                            {emp.plano_ativo === 'premium' ? 'Remover Premium' : 'Ativar Premium'}
-                          </button>
-                        )}
+
+                        <div className="flex gap-4 mb-6 pb-6 border-b border-border-line">
+                          <div className="flex-1 bg-background rounded-xl p-3 text-center border border-border-line">
+                            <p className="text-[10px] font-black uppercase text-text-muted mb-0.5">Membros</p>
+                            <p className="text-lg font-black text-text-base">{emp.usuarios?.[0]?.count || 0}</p>
+                          </div>
+                          <div className="flex-1 bg-background rounded-xl p-3 text-center border border-border-line">
+                            <p className="text-[10px] font-black uppercase text-text-muted mb-0.5">Reservas</p>
+                            <p className="text-lg font-black text-text-base">{emp.agendamentos?.[0]?.count || 0}</p>
+                          </div>
+                        </div>
                       </div>
 
-                      <div className="flex gap-4 mb-6 pb-6 border-b border-border-line">
-                        <div className="flex-1 bg-background rounded-xl p-3 text-center border border-border-line">
-                          <p className="text-[10px] font-black uppercase text-text-muted mb-0.5">Membros</p>
-                          <p className="text-lg font-black text-text-base">{emp.usuarios?.[0]?.count || 0}</p>
-                        </div>
-                        <div className="flex-1 bg-background rounded-xl p-3 text-center border border-border-line">
-                          <p className="text-[10px] font-black uppercase text-text-muted mb-0.5">Reservas</p>
-                          <p className="text-lg font-black text-text-base">{emp.agendamentos?.[0]?.count || 0}</p>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-2">
-                        {emp.plano_ativo === 'pendente_aprovacao' ? (
+                      <div className="flex flex-wrap gap-2 mt-auto">
+                        {emp.plano_ativo === 'pendente_aprovacao' || emp.status === 'pendente' ? (
                           <>
-                            <button onClick={() => aprovarBarbearia(emp.id)} className="flex-1 bg-green-500/10 text-green-600 py-2.5 rounded-xl text-sm font-bold hover:bg-green-500 hover:text-white transition-colors flex justify-center gap-2 cursor-pointer">
+                            <button onClick={() => aprovarBarbearia(emp.id)} className="flex-1 bg-green-500/10 text-green-600 py-2.5 rounded-xl text-sm font-bold hover:bg-green-500 hover:text-white transition-colors flex justify-center items-center gap-2 cursor-pointer">
                               <CheckCircle size={16} /> Aprovar
                             </button>
-                            <button onClick={() => recusarBarbearia(emp.id)} className="flex-1 bg-red-500/10 text-red-500 py-2.5 rounded-xl text-sm font-bold hover:bg-red-500 hover:text-white transition-colors flex justify-center gap-2 cursor-pointer">
+                            <button onClick={() => recusarBarbearia(emp.id)} className="flex-1 bg-red-500/10 text-red-500 py-2.5 rounded-xl text-sm font-bold hover:bg-red-500 hover:text-white transition-colors flex justify-center items-center gap-2 cursor-pointer">
                               <X size={16} /> Recusar
                             </button>
                           </>
                         ) : (
                           <>
-                            <button onClick={() => abrirModalEdicao(emp)} className="flex-1 bg-brand/10 text-brand py-2.5 rounded-xl text-sm font-bold hover:bg-brand hover:text-white transition-colors flex justify-center gap-2 cursor-pointer">
+                            <button onClick={() => abrirModalEdicao(emp)} className="flex-1 bg-background border border-border-line text-text-base py-2.5 rounded-xl text-sm font-bold hover:border-brand transition-colors flex justify-center items-center gap-2 cursor-pointer">
                               <Edit size={16} /> Editar
                             </button>
-                            <Link to={`/${emp.slug}`} target="_blank" className="flex-1 bg-background border border-border-line text-text-base py-2.5 rounded-xl text-sm font-bold hover:border-brand transition-colors flex justify-center gap-2 cursor-pointer">
-                              <ExternalLink size={16} /> Visitar App
+                            {/* ✨ Link para acessar o painel de admin como Master */}
+                            <Link to={`/${emp.slug}/admin`} className="flex-1 bg-brand text-white py-2.5 rounded-xl text-sm font-bold hover:brightness-110 shadow-sm transition-colors flex justify-center items-center gap-2 cursor-pointer">
+                              <Settings size={16} /> Acessar Painel
                             </Link>
                           </>
                         )}
@@ -361,9 +410,15 @@ export default function DashboardMaster() {
                             )}
                           </td>
                           <td className="py-4 px-4 text-right">
-                            <button onClick={() => toggleBanirUsuario(u.id, u.ativo)} className={`text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer transition-colors ${u.ativo ? 'bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white' : 'bg-brand/10 text-brand hover:bg-brand hover:text-white'}`}>
-                              {u.ativo ? 'Banir' : 'Desbanir'}
-                            </button>
+                            <div className="flex justify-end gap-2">
+                              <button onClick={() => toggleBanirUsuario(u.id, u.ativo)} className={`text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer transition-colors ${u.ativo ? 'bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white' : 'bg-brand/10 text-brand hover:bg-brand hover:text-white'}`}>
+                                {u.ativo ? 'Banir' : 'Desbanir'}
+                              </button>
+                              {/* ✨ Botão para excluir usuário */}
+                              <button onClick={() => abrirModalDeletarUsuario(u)} className="p-1.5 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-lg transition-colors cursor-pointer" title="Excluir Usuário">
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -376,6 +431,45 @@ export default function DashboardMaster() {
         )}
 
       </div>
+
+      {/* MODAL DE EXCLUSÃO DE USUÁRIO */}
+      {isModalDeleteUserOpen && usuarioParaDeletar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn">
+          <div className="bg-surface border border-border-line w-full max-w-md rounded-3xl p-6 md:p-8 shadow-2xl relative text-center">
+            
+            <button onClick={() => setIsModalDeleteUserOpen(false)} className="absolute top-4 right-4 text-text-muted hover:text-text-base transition-colors cursor-pointer">
+              <X size={20} />
+            </button>
+            
+            <div className="h-16 w-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Trash2 size={32} />
+            </div>
+            
+            <h2 className="text-xl font-black text-text-base mb-2">
+              Excluir {usuarioParaDeletar.nome.split(' ')[0]}?
+            </h2>
+            <p className="text-sm text-text-muted mb-6">
+              Como deseja lidar com o histórico de agendamentos e pontos deste usuário?
+            </p>
+
+            <div className="space-y-3">
+              <button 
+                onClick={() => confirmarExclusaoUsuario(false)} 
+                className="w-full bg-background border border-border-line text-text-base py-3 rounded-xl text-sm font-bold hover:border-red-500 hover:text-red-500 transition-colors cursor-pointer"
+              >
+                Só excluir o usuário (Manter histórico)
+              </button>
+              
+              <button 
+                onClick={() => confirmarExclusaoUsuario(true)} 
+                className="w-full bg-red-500 text-white py-3 rounded-xl text-sm font-bold hover:brightness-110 transition-colors shadow-md cursor-pointer"
+              >
+                Excluir Usuário + Histórico (Destrutivo)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL DE EDIÇÃO / CRIAÇÃO MANUAL DA BARBEARIA */}
       {isModalOpen && empresaEditando && (
@@ -412,6 +506,13 @@ export default function DashboardMaster() {
                   </select>
                 </div>
                 <div>
+                  <label className="block text-xs font-black text-text-muted uppercase mb-1.5">Status do Painel</label>
+                  <select name="status" value={empresaEditando.status || 'pendente'} onChange={(e) => setEmpresaEditando({...empresaEditando, status: e.target.value})} className="w-full bg-background border border-border-line rounded-xl p-3 text-sm font-bold focus:border-brand outline-none cursor-pointer">
+                    <option value="pendente">Pendente (Bloqueado)</option>
+                    <option value="aprovada">Aprovada (Liberado)</option>
+                  </select>
+                </div>
+                <div className="md:col-span-2">
                   <label className="block text-xs font-black text-text-muted uppercase mb-1.5">CNPJ</label>
                   <input name="cnpj" value={empresaEditando.cnpj || ''} onChange={(e) => setEmpresaEditando({...empresaEditando, cnpj: e.target.value})} className="w-full bg-background border border-border-line rounded-xl p-3 text-sm font-bold focus:border-brand outline-none" />
                 </div>
@@ -422,10 +523,6 @@ export default function DashboardMaster() {
                 <div>
                   <label className="block text-xs font-black text-text-muted uppercase mb-1.5">Cidade</label>
                   <input name="cidade" value={empresaEditando.cidade || ''} onChange={(e) => setEmpresaEditando({...empresaEditando, cidade: e.target.value})} className="w-full bg-background border border-border-line rounded-xl p-3 text-sm font-bold focus:border-brand outline-none" />
-                </div>
-                <div>
-                  <label className="block text-xs font-black text-text-muted uppercase mb-1.5">Estado (UF)</label>
-                  <input name="estado" value={empresaEditando.estado || ''} onChange={(e) => setEmpresaEditando({...empresaEditando, estado: e.target.value})} maxLength="2" className="w-full bg-background border border-border-line rounded-xl p-3 text-sm font-bold focus:border-brand outline-none uppercase" />
                 </div>
               </div>
 

@@ -34,11 +34,26 @@ export default function HomeCliente({ onOpenLogin }) {
 
   const buscarInfoBarbearia = async () => {
     try {
-      const { data, error } = await supabase
+      // 1. Tenta buscar com a nova coluna 'widgets'
+      let { data, error } = await supabase
         .from('barbearias')
-        .select('id, nome, slug, rua, numero, bairro, cidade, estado, hora_abertura, hora_fechamento, dias_funcionamento, widgets') // ✨ Adicionado Widgets
+        .select('id, nome, slug, rua, numero, bairro, cidade, estado, hora_abertura, hora_fechamento, dias_funcionamento, widgets')
         .eq('slug', slug)
         .maybeSingle();
+
+      // 2. Se o erro for de coluna inexistente (42703), faz uma busca de segurança sem ela
+      if (error && error.code === '42703') {
+        console.warn('Coluna widgets não encontrada, buscando dados básicos...');
+        
+        const fallback = await supabase
+          .from('barbearias')
+          .select('id, nome, slug, rua, numero, bairro, cidade, estado, hora_abertura, hora_fechamento, dias_funcionamento')
+          .eq('slug', slug)
+          .maybeSingle();
+          
+        data = fallback.data;
+        error = fallback.error;
+      }
 
       if (error) throw error;
       if (data) setBarbeariaInfo(data);
