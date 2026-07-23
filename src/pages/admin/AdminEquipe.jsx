@@ -3,13 +3,15 @@ import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
 import { useModal } from '../../context/ModalContext';
 import { Users, UserPlus, Search, Shield, Trash2, Phone, Check, Mail, AlertCircle } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { useTenantPlan } from '../../context/PlanContext';
+import { FEATURE_KEYS, parsePlanLimitError } from '../../constants/planFeatures';
 
 const soDigitos = (v) => (v || '').replace(/\D/g, '');
 
 export default function AdminEquipe() {
   const { profile } = useAuth();
   const { showAlert, showConfirm } = useModal();
+  const plan = useTenantPlan();
 
   const [equipe, setEquipe] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -110,6 +112,16 @@ export default function AdminEquipe() {
   };
 
   const adicionarAEquipe = async () => {
+    const limite = plan.checkPlanLimit(FEATURE_KEYS.MAX_EMPLOYEES);
+    if (!limite.ok) {
+      showAlert(
+        'Limite do plano Free',
+        `Seu plano permite até ${limite.limit} funcionários (${limite.usage} em uso). Faça upgrade para o Horza Pro.`,
+        'info'
+      );
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from('usuarios')
@@ -129,6 +141,12 @@ export default function AdminEquipe() {
       buscarEquipe();
       setTab('lista');
     } catch (err) {
+      const parsed = parsePlanLimitError(err.message);
+      if (parsed?.featureKey === FEATURE_KEYS.MAX_EMPLOYEES) {
+        showAlert('Limite atingido', `Máximo de ${parsed.limit} funcionários no plano Free. Conheça o Horza Pro.`, 'info');
+        plan.reload();
+        return;
+      }
       showAlert('Erro', 'Não foi possível adicionar: ' + err.message, 'error');
     }
   };
@@ -157,6 +175,11 @@ export default function AdminEquipe() {
       <div className="mb-8">
         <h1 className="text-2xl font-black text-text-base">Equipe de Barbeiros</h1>
         <p className="text-sm text-text-muted mt-1">Gerencie os profissionais que aparecem na agenda.</p>
+        {!plan.loading && plan.checkPlanLimit(FEATURE_KEYS.MAX_EMPLOYEES).limit != null && (
+          <p className="text-xs font-bold text-brand mt-2">
+            {plan.checkPlanLimit(FEATURE_KEYS.MAX_EMPLOYEES).usage}/{plan.checkPlanLimit(FEATURE_KEYS.MAX_EMPLOYEES).limit} funcionários no plano {plan.planNome}
+          </p>
+        )}
       </div>
 
       <div className="flex gap-2 p-1 bg-surface border border-border-line rounded-xl mb-8 w-full max-w-md">

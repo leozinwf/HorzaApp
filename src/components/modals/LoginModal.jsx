@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useModal } from '../../context/ModalContext';
 import { X, Eye, EyeOff, Mail, Lock, User, Phone, LogIn, Store } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import { vincularAgendamentosGhost, lerCadastroPendente, limparCadastroPendente } from '../../services/ghostClienteService';
 
 export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
   const { showAlert } = useModal();
@@ -38,6 +39,13 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
       setError('');
       setPassword('');
       setConfirmPassword('');
+
+      const pendente = lerCadastroPendente();
+      if (pendente && (initialMode === 'register' || initialMode === 'login')) {
+        if (pendente.nome) setNome(pendente.nome);
+        if (pendente.whatsapp) setWhatsapp(pendente.whatsapp);
+        if (pendente.email) setEmail(pendente.email);
+      }
     }
   }, [isOpen, initialMode]);
 
@@ -50,6 +58,17 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
   };
   const senhaValida = validacoesSenha.minimo && validacoesSenha.maiuscula && validacoesSenha.especial;
   const senhasDiferentes = (mode === 'register' || mode === 'update_password') && confirmPassword.length > 0 && password !== confirmPassword;
+
+  const vincularHistoricoAvulso = async (userId) => {
+    const pendente = lerCadastroPendente();
+    const whats = whatsapp || pendente?.whatsapp;
+    const mail = email || pendente?.email;
+    const vinculados = await vincularAgendamentosGhost(userId, whats, mail);
+    if (vinculados > 0) {
+      showAlert('Histórico vinculado!', `${vinculados} agendamento(s) anterior(es) foram associados à sua conta.`, 'success');
+      limparCadastroPendente();
+    }
+  };
 
   const handleAuth = async (e) => {
     e.preventDefault();
@@ -82,13 +101,17 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
 
           if (profileError) throw profileError;
 
+          await vincularHistoricoAvulso(data.user.id);
           showAlert('Bem-vindo!', 'Conta criada com sucesso. Você já pode realizar seus agendamentos.', 'success');
           onClose();
         }
       } else {
         const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;
-        if (data?.user) onClose();
+        if (data?.user) {
+          await vincularHistoricoAvulso(data.user.id);
+          onClose();
+        }
       }
     } catch (err) {
       setError(err.message === 'Invalid login credentials' ? 'E-mail ou senha incorretos.' : err.message);
@@ -149,8 +172,8 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
              mode === 'forgot_password' ? 'Recuperar Senha' : 'Redefinir Senha'}
           </h2>
           <p className="text-sm text-text-muted mt-1">
-            {mode === 'login' ? 'Acesse sua conta para agendar seus horários.' : 
-             mode === 'register' ? 'Junte-se a nós para a melhor experiência.' : 
+            {mode === 'login' ? 'Acesse sua conta para agendar seus horários.' :
+             mode === 'register' ? 'Cadastro rápido para agendar, acumular moedas e acompanhar seu histórico.' :
              mode === 'forgot_password' ? 'Enviaremos um link de recuperação.' : 'Crie uma nova senha segura.'}
           </p>
         </div>
@@ -164,15 +187,21 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
         <form onSubmit={mode === 'update_password' ? handleUpdatePassword : mode === 'forgot_password' ? handleForgotPassword : handleAuth} className="space-y-4">
           
           {mode === 'register' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="relative md:col-span-2">
-                <User size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
-                <input type="text" required placeholder="Nome Completo" value={nome} onChange={(e) => setNome(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" />
+            <div className="bg-background/80 border border-border-line rounded-2xl p-4 space-y-4">
+              <p className="text-xs font-black uppercase tracking-wider text-brand">Seus dados</p>
+              <div className="space-y-3">
+                <div className="relative">
+                  <User size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
+                  <input type="text" required placeholder="Nome completo" value={nome} onChange={(e) => setNome(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-surface border border-border-line rounded-xl text-sm focus:border-brand outline-none font-bold" />
+                </div>
+                <div className="relative">
+                  <Phone size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
+                  <input type="tel" required placeholder="WhatsApp (com DDD)" value={whatsapp} onChange={handlePhoneChange} className="w-full pl-10 pr-4 py-3 bg-surface border border-border-line rounded-xl text-sm focus:border-brand outline-none font-bold" />
+                </div>
               </div>
-              <div className="relative md:col-span-2">
-                <Phone size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
-                <input type="tel" required placeholder="WhatsApp" value={whatsapp} onChange={handlePhoneChange} className="w-full pl-10 pr-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" />
-              </div>
+              <p className="text-[11px] text-text-muted leading-relaxed">
+                Usamos seu WhatsApp para lembretes de agendamento e, se você agendou como visitante, para vincular seu histórico.
+              </p>
             </div>
           )}
 
@@ -211,14 +240,26 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
             <div>
               <div className="relative">
                 <Lock size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
-                <input 
-                  type={showConfirmPassword ? 'text' : 'password'} required placeholder="Confirmar Senha" 
-                  value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} 
-                  className={`w-full pl-10 pr-10 py-3 bg-background border rounded-xl text-sm outline-none transition-colors ${senhasDiferentes ? 'border-red-500 focus:border-red-500' : 'border-border-line focus:border-brand'}`} 
+                <input
+                  type={showConfirmPassword ? 'text' : 'password'} required placeholder="Confirmar senha"
+                  value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+                  className={`w-full pl-10 pr-10 py-3 bg-background border rounded-xl text-sm outline-none transition-colors ${senhasDiferentes ? 'border-red-500 focus:border-red-500' : 'border-border-line focus:border-brand'}`}
                 />
+                <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3.5 top-3.5 text-text-muted hover:text-brand transition-colors cursor-pointer" tabIndex="-1">
+                  {showConfirmPassword ? <EyeOff size={18}/> : <Eye size={18}/>}
+                </button>
               </div>
               {senhasDiferentes && <p className="text-red-500 text-xs font-bold mt-1 px-1">As senhas não coincidem.</p>}
             </div>
+          )}
+
+          {mode === 'register' && (
+            <p className="text-[11px] text-text-muted text-center leading-relaxed">
+              Ao criar conta, você concorda com os{' '}
+              <Link to="/termos" onClick={onClose} className="text-brand font-bold hover:underline">Termos</Link>
+              {' '}e a{' '}
+              <Link to="/privacidade" onClick={onClose} className="text-brand font-bold hover:underline">Privacidade</Link>.
+            </p>
           )}
 
           {mode === 'login' && (
@@ -229,7 +270,7 @@ export default function LoginModal({ isOpen, onClose, initialMode = 'login' }) {
             </div>
           )}
 
-          <button type="submit" disabled={loading} className="w-full bg-brand text-white font-bold py-3.5 rounded-xl text-sm hover:bg-brand-hover transition-colors shadow-md flex justify-center mt-4 cursor-pointer">
+          <button type="submit" disabled={loading || (mode === 'register' && (!senhaValida || senhasDiferentes))} className="w-full bg-brand text-white font-bold py-3.5 rounded-xl text-sm hover:bg-brand-hover transition-colors shadow-md flex justify-center mt-4 cursor-pointer disabled:opacity-50">
             {loading ? <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : (mode === 'login' ? 'Entrar' : mode === 'forgot_password' ? 'Recuperar Senha' : 'Criar Minha Conta')}
           </button>
 

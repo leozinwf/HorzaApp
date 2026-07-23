@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
 import { Calendar, CheckCircle2, TrendingUp, Clock, User, Scissors } from 'lucide-react';
+import ProSection from '../../components/shared/ProSection';
+import { DashboardAvancadoBlock } from '../../components/shared/ProModuleBlocks';
+import { FEATURE_KEYS } from '../../constants/planFeatures';
 
 export default function DashboardAdmin() {
   const { profile } = useAuth();
@@ -17,7 +20,7 @@ export default function DashboardAdmin() {
 
   useEffect(() => {
     if (profile?.barbearia_id) buscarDadosHoje();
-  }, [profile]);
+  }, [profile?.barbearia_id]);
 
   const buscarDadosHoje = async () => {
     setLoading(true);
@@ -159,6 +162,15 @@ export default function DashboardAdmin() {
               </div>
             )}
           </div>
+
+          <ProSection
+            featureKey={FEATURE_KEYS.DASHBOARD_AVANCADO}
+            title="Dashboard Avançado"
+            description="Comparativos, projeções e ranking de performance — Horza Pro."
+            overlay
+          >
+            <DashboardAvancadoBlock />
+          </ProSection>
         </>
       )}
     </div>

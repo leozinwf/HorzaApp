@@ -3,7 +3,7 @@ import { supabase } from '../../services/supabaseClient';
 import { User, Lock, Phone, MapPin, Sun, Moon } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-export default function FormularioPerfil({ user, profile }) {
+export default function FormularioPerfil({ user, profile, embedded = false }) {
   const [formData, setFormData] = useState(profile || {});
   const [novaSenha, setNovaSenha] = useState('');
   const [loading, setLoading] = useState(false);
@@ -63,7 +63,7 @@ export default function FormularioPerfil({ user, profile }) {
   };
 
   return (
-    <div className="bg-surface p-6 sm:p-8 rounded-[2rem] border border-border-line shadow-sm space-y-8 animate-fadeIn">
+    <div className={embedded ? 'space-y-8' : 'bg-surface p-6 sm:p-8 rounded-[2rem] border border-border-line shadow-sm space-y-8 animate-fadeIn'}>
       <div>
         <h3 className="text-lg font-black text-text-base flex items-center gap-2 mb-6"><Sun size={20} className="text-brand" /> Preferências</h3>
         <div className="flex items-center justify-between bg-background border border-border-line p-4 rounded-2xl">

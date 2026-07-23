@@ -14,6 +14,12 @@ import { auditLogService } from '../../services/auditLogService';
 
 import HistoricoMudancas from '../../components/admin/HistoricoMudancas';
 
+import ProSection from '../../components/shared/ProSection';
+
+import { FidelidadeAvancadaBlock } from '../../components/shared/ProModuleBlocks';
+
+import { FEATURE_KEYS } from '../../constants/planFeatures';
+
 import { parseMoedaBRL } from '../../utils/formatters';
 
 
@@ -334,6 +340,8 @@ export default function AdminFidelidade() {
 
       {/* PACOTES / COMBOS */}
 
+      <ProSection featureKey={FEATURE_KEYS.FIDELIDADE_AVANCADA} overlay>
+
       <div className="bg-surface border border-border-line rounded-3xl p-6 shadow-sm">
 
         <h2 className="text-sm font-black text-text-muted uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -439,6 +447,26 @@ export default function AdminFidelidade() {
         )}
 
       </div>
+
+      </ProSection>
+
+
+
+      <ProSection
+
+        featureKey={FEATURE_KEYS.FIDELIDADE_AVANCADA}
+
+        title="Fidelidade Avançada"
+
+        description="Assinaturas mensais, níveis VIP e campanhas — Horza Pro."
+
+        overlay
+
+      >
+
+        <FidelidadeAvancadaBlock />
+
+      </ProSection>
 
 
 

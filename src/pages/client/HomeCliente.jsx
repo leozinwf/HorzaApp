@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { supabase } from '../../services/supabaseClient';
 import MapaLocalizacao from '../../components/shared/MapaLocalizacao';
+import HorzaFooter from '../../components/layout/HorzaFooter';
 import { canManageBarbeariaSlug, canAccessBarbeariaAdmin } from '../../constants/roles';
 import {
   Scissors, User, Clock, MapPin, LogOut, Star, CalendarDays,
@@ -67,6 +68,10 @@ export default function HomeCliente({ onOpenLogin }) {
       if (data) {
         setBarbeariaInfo(data);
         sessionStorage.setItem(cacheKey(slug), JSON.stringify(data));
+        if (data.cor_primaria) {
+          document.documentElement.style.setProperty('--brand', data.cor_primaria);
+          document.documentElement.style.setProperty('--color-brand', data.cor_primaria);
+        }
       }
     } catch (err) {
       console.error('Erro ao buscar barbearia:', err);
@@ -106,7 +111,7 @@ export default function HomeCliente({ onOpenLogin }) {
   }
 
   return (
-    <div className="flex flex-col text-text-base bg-background min-h-screen pb-24">
+    <div className="flex flex-col text-text-base bg-background min-h-screen">
       {/* HERO com foto */}
       <div className="relative overflow-hidden">
         {(barbeariaInfo?.capa_url || barbeariaInfo?.logo_url) ? (
@@ -155,9 +160,9 @@ export default function HomeCliente({ onOpenLogin }) {
           {user ? (
             <div className="grid grid-cols-3 gap-3">
               {[
-                { to: '/area-cliente?tab=fidelidade', icon: Star, label: 'Pontos', value: profile?.saldo_pontos || 0 },
-                { to: '/area-cliente?tab=agendamentos', icon: Clock, label: 'Histórico', value: 'Ver' },
-                { to: '/area-cliente?tab=perfil', icon: User, label: 'Conta', value: 'Perfil' },
+                { to: '/area-cliente', icon: Star, label: 'Pontos', value: profile?.saldo_pontos || 0 },
+                { to: '/area-cliente', icon: Clock, label: 'Histórico', value: 'Ver' },
+                { to: '/area-cliente', icon: User, label: 'Conta', value: 'Perfil' },
               ].map((item) => (
                 <Link key={item.to} to={item.to} className="bg-surface/90 backdrop-blur border border-border-line p-3 rounded-2xl flex flex-col items-center gap-1 hover:border-brand">
                   <item.icon size={18} className="text-brand" />
@@ -180,7 +185,7 @@ export default function HomeCliente({ onOpenLogin }) {
         </div>
       </div>
 
-      <div className="w-full max-w-5xl mx-auto px-5 space-y-8">
+      <div className="w-full max-w-5xl mx-auto px-5 space-y-8 pb-6">
         {barbeariaInfo && slug && (
           <Link
             to={`/${slug}/agendar`}
@@ -273,6 +278,7 @@ export default function HomeCliente({ onOpenLogin }) {
           </button>
         )}
       </div>
+      <HorzaFooter />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { isSuperAdminUser } from './SuperAdminRoute';
 import { canAccessBarbeariaAdmin, canAccessBarbeiroPanel } from '../../constants/roles';
 import { supabase } from '../../services/supabaseClient';
+import NotificacoesSino from './NotificacoesSino';
 import { 
   Scissors, LogOut, LayoutDashboard, LogIn, 
   Calendar, Home, Clock, User, Shield, Compass, Sun, Moon 
@@ -66,7 +67,7 @@ export default function MenuNavegacao({ onOpenLogin }) {
   const isSuperAdmin = isSuperAdminUser(user, profile);
   const podePainelBarbearia = canAccessBarbeariaAdmin(user, profile);
   const podePainelBarbeiro = canAccessBarbeiroPanel(user, profile) && profile?.role !== 'super_admin';
-  const linkPerfil = '/area-cliente?tab=perfil';
+  const linkPerfil = '/area-cliente';
 
   useEffect(() => {
     async function buscarSlugDaEmpresa() {
@@ -113,7 +114,9 @@ export default function MenuNavegacao({ onOpenLogin }) {
   }, [profile, podePainelBarbearia, podePainelBarbeiro, isSuperAdmin]);
 
   const pathParts = location.pathname.split('/').filter(Boolean);
-  const isRotaGlobal = pathParts.length > 0 && ['master', 'area-cliente'].includes(pathParts[0]);
+  const isRotaGlobal = pathParts.length > 0 && [
+    'master', 'area-cliente', 'suporte', 'contato', 'termos', 'consentimento', 'privacidade', 'quem-somos', 'cadastro-barbearia',
+  ].includes(pathParts[0]);
   const slugNaUrl = (!isRotaGlobal && pathParts.length > 0) ? pathParts[0] : null;
   const slugPainel = slugDaEmpresa || slugNaUrl;
 
@@ -123,7 +126,7 @@ export default function MenuNavegacao({ onOpenLogin }) {
   return (
     <>
       {/* 🖥️ MENU DESKTOP */}
-      <header className="hidden md:flex bg-menu backdrop-blur-xl border-b border-border-line px-8 py-3 items-center sticky top-0 z-50 shadow-lg transition-all">
+      <header className="hidden md:flex fixed top-0 left-0 right-0 bg-menu backdrop-blur-xl border-b border-border-line px-8 py-3 items-center z-50 shadow-lg transition-all h-[var(--horza-header-h)]">
         
         <div className="flex-1 flex items-center gap-5">
           <Link to="/" className="flex items-center gap-2 text-brand font-black text-xl cursor-pointer hover:opacity-80 transition-opacity">
@@ -175,6 +178,8 @@ export default function MenuNavegacao({ onOpenLogin }) {
 
         <div className="flex-1 flex items-center justify-end gap-3">
           
+          {user && <NotificacoesSino />}
+
           <button 
             onClick={toggleTheme} 
             className="p-2.5 text-text-muted hover:text-brand rounded-xl hover:bg-surface border border-transparent hover:border-border-line transition-all cursor-pointer" 

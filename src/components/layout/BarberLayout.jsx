@@ -23,7 +23,7 @@ export default function BarberLayout() {
   ) || menuItems[0];
 
   return (
-    <div className="w-full font-sans pb-24 md:pb-10 relative">
+    <div className="w-full font-sans pb-safe md:pb-10 relative">
       <div className="bg-surface border-b border-border-line px-4 md:px-8 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="bg-brand text-white p-2 rounded-xl">
@@ -39,7 +39,7 @@ export default function BarberLayout() {
         </Link>
       </div>
 
-      <div className="md:hidden sticky top-[60px] z-50 bg-surface border-b border-border-line px-4 py-3 shadow-sm">
+      <div className="md:hidden sticky top-0 z-50 bg-surface border-b border-border-line px-4 py-3 shadow-sm">
         <button onClick={() => setMenuMobileAberto(!menuMobileAberto)} className="w-full bg-background border border-border-line px-4 py-3 rounded-xl flex items-center justify-between font-bold text-sm text-text-base shadow-sm">
           <div className="flex items-center gap-2">
             <Menu size={18} className="text-brand" />
@@ -68,7 +68,7 @@ export default function BarberLayout() {
         )}
       </div>
 
-      <div className="hidden md:block sticky top-[68px] z-40 bg-background/80 backdrop-blur-md border-b border-border-line mb-6 shadow-sm">
+      <div className="hidden md:block sticky top-[var(--horza-header-h)] z-40 bg-background/80 backdrop-blur-md border-b border-border-line mb-6 shadow-sm">
         <div className="max-w-6xl mx-auto px-8 py-3 flex gap-2 items-center overflow-x-auto whitespace-nowrap hide-scrollbar">
           {menuItems.map((item, index) => {
             const isActive = item.path === itemAtivo.path;

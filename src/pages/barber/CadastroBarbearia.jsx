@@ -1,8 +1,13 @@
 import React, { useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useModal } from '../../context/ModalContext';
-import { useNavigate } from 'react-router-dom';
-import { Store, User, Phone, Mail, Lock, Check, MapPin, Building } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { Store, User, Phone, Mail, Lock, Check, MapPin, Building, Clock, Eye, EyeOff } from 'lucide-react';
+
+const DIAS_SEMANA = [
+  { id: 0, nome: 'Dom' }, { id: 1, nome: 'Seg' }, { id: 2, nome: 'Ter' },
+  { id: 3, nome: 'Qua' }, { id: 4, nome: 'Qui' }, { id: 5, nome: 'Sex' }, { id: 6, nome: 'Sáb' },
+];
 
 // Função de validação de CNPJ
 const validarCNPJ = (cnpj) => {
@@ -46,6 +51,12 @@ export default function CadastroBarbearia() {
   const [email, setEmail] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [horaAbertura, setHoraAbertura] = useState('09:00');
+  const [horaFechamento, setHoraFechamento] = useState('19:00');
+  const [diasFuncionamento, setDiasFuncionamento] = useState([1, 2, 3, 4, 5, 6]);
 
   // Estados - Dados da Empresa
   const [nomeBarbearia, setNomeBarbearia] = useState('');
@@ -108,6 +119,20 @@ export default function CadastroBarbearia() {
     setSlugBarbearia(formatarSlug(e.target.value));
   };
 
+  const toggleDia = (diaId) => {
+    setDiasFuncionamento((prev) =>
+      prev.includes(diaId) ? prev.filter((d) => d !== diaId) : [...prev, diaId].sort((a, b) => a - b)
+    );
+  };
+
+  const validacoesSenha = {
+    minimo: password.length >= 6,
+    maiuscula: /[A-Z]/.test(password),
+    especial: /[^A-Za-z0-9]/.test(password),
+  };
+  const senhaValida = validacoesSenha.minimo && validacoesSenha.maiuscula && validacoesSenha.especial;
+  const senhasDiferentes = confirmPassword.length > 0 && password !== confirmPassword;
+
   // Busca de CEP automatizada via ViaCEP
   const handleCepChange = async (e) => {
     let value = e.target.value.replace(/\D/g, '');
@@ -140,8 +165,23 @@ export default function CadastroBarbearia() {
       return;
     }
 
-    if (password.length < 6) {
-      setError('A senha deve ter no mínimo 6 caracteres.');
+    if (diasFuncionamento.length === 0) {
+      setError('Selecione pelo menos um dia de funcionamento.');
+      return;
+    }
+
+    if (horaAbertura >= horaFechamento) {
+      setError('O horário de abertura deve ser anterior ao de fechamento.');
+      return;
+    }
+
+    if (!senhaValida) {
+      setError('A senha não atende aos requisitos de segurança.');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError('As senhas não coincidem.');
       return;
     }
 
@@ -160,8 +200,10 @@ export default function CadastroBarbearia() {
         cidade: cidade,
         estado: estado,
         telefone: whatsapp,
-        plano_ativo: 'pendente_aprovacao',
-        status: 'pendente'
+        status: 'pendente',
+        hora_abertura: horaAbertura,
+        hora_fechamento: horaFechamento,
+        dias_funcionamento: diasFuncionamento,
       }]).select('id').single();
 
       if (barbError) throw new Error('Este SLUG já está em uso ou ocorreu um erro no servidor.');
@@ -286,10 +328,47 @@ export default function CadastroBarbearia() {
               </div>
             </div>
 
+            {/* SESSÃO: HORÁRIO DE FUNCIONAMENTO */}
+            <div>
+              <h3 className="text-lg font-bold border-b border-border-line pb-2 mb-4 flex items-center gap-2">
+                <Clock size={18} className="text-brand"/> 3. Horário de funcionamento *
+              </h3>
+              <p className="text-xs text-text-muted mb-4">Defina quando sua barbearia atende. Você poderá ajustar depois no painel.</p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-xs font-bold text-text-muted uppercase mb-1">Abertura *</label>
+                  <input required type="time" value={horaAbertura} onChange={(e) => setHoraAbertura(e.target.value)} className="w-full p-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-text-muted uppercase mb-1">Fechamento *</label>
+                  <input required type="time" value={horaFechamento} onChange={(e) => setHoraFechamento(e.target.value)} className="w-full p-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" />
+                </div>
+              </div>
+
+              <label className="block text-xs font-bold text-text-muted uppercase mb-2">Dias da semana *</label>
+              <div className="flex flex-wrap gap-2">
+                {DIAS_SEMANA.map((dia) => (
+                  <button
+                    key={dia.id}
+                    type="button"
+                    onClick={() => toggleDia(dia.id)}
+                    className={`px-4 py-2.5 rounded-xl text-sm font-black border transition-colors ${
+                      diasFuncionamento.includes(dia.id)
+                        ? 'bg-brand text-white border-brand'
+                        : 'bg-background border-border-line text-text-muted hover:border-brand'
+                    }`}
+                  >
+                    {dia.nome}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* SESSÃO 3: DADOS DO DONO (ACESSO) */}
             <div>
               <h3 className="text-lg font-bold border-b border-border-line pb-2 mb-4 flex items-center gap-2">
-                <User size={18} className="text-brand"/> 3. Dados do Gestor (Login)
+                <User size={18} className="text-brand"/> 4. Dados do gestor (login)
               </h3>
               
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -318,13 +397,40 @@ export default function CadastroBarbearia() {
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="block text-xs font-bold text-text-muted uppercase mb-1">Senha (Mín. 6 caracteres) *</label>
+                  <label className="block text-xs font-bold text-text-muted uppercase mb-1">Senha *</label>
                   <div className="relative">
                     <Lock size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
-                    <input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" />
+                    <input required type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-background border border-border-line rounded-xl text-sm focus:border-brand outline-none" />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-3.5 text-text-muted hover:text-brand" tabIndex={-1}>
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
                   </div>
+                  <ul className="text-xs space-y-1 mt-2 px-1">
+                    <li className={`font-bold ${validacoesSenha.minimo ? 'text-green-500' : 'text-text-muted'}`}>{validacoesSenha.minimo ? '✓' : '✖'} Mínimo 6 caracteres</li>
+                    <li className={`font-bold ${validacoesSenha.maiuscula ? 'text-green-500' : 'text-text-muted'}`}>{validacoesSenha.maiuscula ? '✓' : '✖'} Uma letra maiúscula</li>
+                    <li className={`font-bold ${validacoesSenha.especial ? 'text-green-500' : 'text-text-muted'}`}>{validacoesSenha.especial ? '✓' : '✖'} Um caractere especial</li>
+                  </ul>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-text-muted uppercase mb-1">Confirmar senha *</label>
+                  <div className="relative">
+                    <Lock size={18} className="absolute left-3.5 top-3.5 text-text-muted" />
+                    <input required type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={`w-full pl-10 pr-10 py-3 bg-background border rounded-xl text-sm outline-none ${senhasDiferentes ? 'border-red-500' : 'border-border-line focus:border-brand'}`} />
+                    <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3.5 top-3.5 text-text-muted hover:text-brand" tabIndex={-1}>
+                      {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                  {senhasDiferentes && <p className="text-red-500 text-xs font-bold mt-1">As senhas não coincidem.</p>}
                 </div>
               </div>
+
+              <p className="text-xs text-text-muted mt-4">
+                Ao cadastrar, você concorda com os{' '}
+                <Link to="/termos" className="text-brand font-bold hover:underline">Termos de uso</Link>
+                {' '}e a{' '}
+                <Link to="/privacidade" className="text-brand font-bold hover:underline">Política de privacidade</Link>.
+              </p>
             </div>
 
             <div className="pt-4 flex items-center justify-between gap-4">
@@ -332,7 +438,7 @@ export default function CadastroBarbearia() {
                 Cancelar
               </button>
               
-              <button type="submit" disabled={loading || cnpjError} className="bg-brand text-white font-bold py-3.5 px-8 rounded-xl text-sm hover:bg-brand-hover transition-colors shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+              <button type="submit" disabled={loading || cnpjError || senhasDiferentes || !senhaValida || diasFuncionamento.length === 0} className="bg-brand text-white font-bold py-3.5 px-8 rounded-xl text-sm hover:bg-brand-hover transition-colors shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
                 {loading ? <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <><Check size={18}/> Concluir Cadastro</>}
               </button>
             </div>

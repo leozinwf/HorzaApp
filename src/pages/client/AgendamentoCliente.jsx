@@ -1,16 +1,21 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
-import { Calendar, Clock, User, CheckCircle2, ChevronRight, ArrowLeft, X, AlertTriangle, Mail, Phone, LogIn, Check, Scissors } from 'lucide-react';
+import { Calendar, Clock, User, CheckCircle2, ChevronRight, ArrowLeft, X, AlertTriangle, Mail, Phone, LogIn, Check, Scissors, Sparkles, Gift } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { dateTimeToISO } from '../../utils/formatters';
 import AdicionarCalendario from '../../components/shared/AdicionarCalendario';
 import { notificarNovoAgendamento } from '../../services/agendamentoNotificacaoService';
+import { salvarCadastroPendente } from '../../services/ghostClienteService';
+import { parsePlanLimitError, FEATURE_KEYS } from '../../constants/planFeatures';
+import toast from 'react-hot-toast';
 
 export default function AgendamentoCliente({ onOpenLogin }) {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
-  const { slug } = useParams(); // CAPTURA DA URL
+  const { slug } = useParams();
+  const [searchParams] = useSearchParams();
+  const barbeiroQrId = searchParams.get('barbeiro');
 
   const [barbeariaContext, setBarbeariaContext] = useState(null);
   const [servicos, setServicos] = useState([]);
@@ -30,7 +35,7 @@ export default function AgendamentoCliente({ onOpenLogin }) {
   const [nomeGuest, setNomeGuest] = useState('');
   const [whatsappGuest, setWhatsappGuest] = useState('');
   const [emailGuest, setEmailGuest] = useState('');
-  const [jaTinhaConta, setJaTinhaConta] = useState(false);
+  const [agendamentoGhost, setAgendamentoGhost] = useState(false);
   const [agendamentoId, setAgendamentoId] = useState(null);
 
   const finalizarAgendamento = async (novoId) => {
@@ -143,6 +148,12 @@ export default function AgendamentoCliente({ onOpenLogin }) {
       );
 
       setBarbeiros(visiveis);
+
+      if (barbeiroQrId && visiveis.some((b) => b.id === barbeiroQrId)) {
+        const pre = visiveis.find((b) => b.id === barbeiroQrId);
+        setBarbeiroSelecionado(pre);
+        if (servicoSelecionado) setPasso(3);
+      }
     } catch (err) {
       console.error('Erro ao buscar barbeiros:', err.message);
       setBarbeiros([]);
@@ -221,7 +232,7 @@ export default function AgendamentoCliente({ onOpenLogin }) {
     e.preventDefault();
 
     if (!data || !horario) {
-      alert('Selecione uma data e um horário válidos.');
+      toast.error('Selecione uma data e um horário válidos.');
       return;
     }
 
@@ -236,7 +247,7 @@ export default function AgendamentoCliente({ onOpenLogin }) {
 
         const { data: podeAgendar } = await supabase.rpc('verificar_limite_agendamentos', { ip_requisitante: ip });
         if (!podeAgendar) {
-          alert('Muitas tentativas de agendamento detectadas. Tente novamente em uma hora.');
+          toast.error('Muitas tentativas de agendamento. Tente novamente em uma hora.');
           return;
         }
 
@@ -261,57 +272,43 @@ export default function AgendamentoCliente({ onOpenLogin }) {
         if (error) throw error;
         await finalizarAgendamento(inserted.id);
       } else {
-        if (!nomeGuest || !whatsappGuest || !emailGuest) {
-          alert('Preencha os seus dados para podermos confirmar a sua reserva.');
+        if (!nomeGuest.trim() || !whatsappGuest.trim()) {
+          toast.error('Informe nome e WhatsApp para confirmar a reserva.');
           return;
-        }
-
-        const senhaTemporaria = Math.random().toString(36).slice(-10) + 'A1!';
-        const { data: authData, error: authError } = await supabase.auth.signUp({
-          email: emailGuest,
-          password: senhaTemporaria
-        });
-
-        let novoUserId = null;
-
-        if (authError) {
-          if (authError.message.includes('User already registered')) {
-            setJaTinhaConta(true);
-            alert('Este e-mail já possui conta. Faça login para concluir o agendamento.');
-            onOpenLogin?.();
-            return;
-          }
-          throw authError;
-        }
-
-        novoUserId = authData.user?.id;
-        if (novoUserId) {
-          const { error: profileError } = await supabase.from('usuarios').insert([{
-            id: novoUserId,
-            nome: nomeGuest,
-            whatsapp: whatsappGuest,
-            role: 'cliente'
-          }]);
-          if (profileError) throw profileError;
         }
 
         const { data: agInserted, error: agError } = await supabase.from('agendamentos').insert([{
           barbearia_id: servicoSelecionado.barbearia_id,
-          cliente_id: novoUserId,
+          cliente_id: null,
           barbeiro_id: barbeiroSelecionado.id,
           servico_id: servicoSelecionado.id,
           data_hora: dataHoraIso,
           status_pagamento: 'pagar_na_hora',
           status_atendimento: 'agendado',
-          nome_cliente_avulso: nomeGuest,
-          whatsapp_cliente_avulso: whatsappGuest
+          nome_cliente_avulso: nomeGuest.trim(),
+          whatsapp_cliente_avulso: whatsappGuest.trim(),
+          email_cliente_avulso: emailGuest.trim() || null,
         }]).select('id').single();
 
         if (agError) throw agError;
+
+        salvarCadastroPendente({
+          nome: nomeGuest.trim(),
+          whatsapp: whatsappGuest.trim(),
+          email: emailGuest.trim(),
+          barbeariaSlug: slug,
+        });
+
+        setAgendamentoGhost(true);
         await finalizarAgendamento(agInserted.id);
       }
     } catch (err) {
-      alert('Erro ao processar agendamento: ' + err.message);
+      const parsed = parsePlanLimitError(err.message);
+      if (parsed?.featureKey === FEATURE_KEYS.MAX_APPOINTMENTS_MONTH) {
+        toast.error(`Limite de ${parsed.limit} agendamentos/mês atingido nesta barbearia. Peça ao administrador para fazer upgrade.`);
+        return;
+      }
+      toast.error('Erro ao processar agendamento: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -326,7 +323,7 @@ export default function AgendamentoCliente({ onOpenLogin }) {
     setNomeGuest('');
     setWhatsappGuest('');
     setEmailGuest('');
-    setJaTinhaConta(false);
+    setAgendamentoGhost(false);
     setPasso(1);
     setIsCancelModalOpen(false);
     navigate(`/${slug}`);
@@ -342,9 +339,13 @@ export default function AgendamentoCliente({ onOpenLogin }) {
     );
   }
 
+  const abrirCadastroPosAgendamento = () => {
+    onOpenLogin?.('register');
+  };
+
   return (
-    <div className="flex flex-col text-text-base pb-24 bg-background min-h-screen font-sans">
-      <div className="flex-1 flex justify-center pt-8 px-4 sm:px-6 lg:px-8">
+    <div className="flex flex-col text-text-base bg-background min-h-screen font-sans page-shell">
+      <div className="flex-1 flex justify-center pt-6 md:pt-10 px-4 sm:px-6 lg:px-8">
         <div className="w-full max-w-xl">
           
           {passo < 4 && (
@@ -527,24 +528,26 @@ export default function AgendamentoCliente({ onOpenLogin }) {
                   <div className="bg-brand/5 p-5 sm:p-6 rounded-3xl border border-brand/20 space-y-5 animate-fadeIn">
                     <div>
                       <h3 className="font-black text-brand text-lg">Seus Dados</h3>
-                      <p className="text-xs text-brand/70 font-medium">Precisamos disso para confirmar a sua reserva.</p>
+                      <p className="text-xs text-brand/70 font-medium mt-1">
+                        Sem cadastro obrigatório — salvamos sua reserva e você pode criar conta depois.
+                      </p>
                     </div>
                     
                     <div className="space-y-4">
                       <div>
-                        <label className="block text-[10px] font-black text-brand/80 uppercase mb-1.5">Nome Completo</label>
-                        <input required={!user} type="text" value={nomeGuest} onChange={(e) => setNomeGuest(e.target.value)} placeholder="Ex: Lucas Ramos" className="w-full rounded-2xl bg-white dark:bg-background border-none p-3.5 text-sm font-bold text-text-base outline-none focus:ring-2 focus:ring-brand shadow-sm transition-all" />
+                        <label className="block text-[10px] font-black text-brand/80 uppercase mb-1.5">Nome Completo *</label>
+                        <input required={!user} type="text" value={nomeGuest} onChange={(e) => setNomeGuest(e.target.value)} placeholder="Ex: Lucas Ramos" className="w-full rounded-2xl bg-white dark:bg-background border border-border-line/50 p-3.5 text-sm font-bold text-text-base outline-none focus:ring-2 focus:ring-brand shadow-sm transition-all" />
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-[10px] font-black text-brand/80 uppercase mb-1.5">WhatsApp / Celular</label>
-                          <input required={!user} type="tel" value={whatsappGuest} onChange={handleWhatsappChange} placeholder="(11) 99999-0000" className="w-full rounded-2xl bg-white dark:bg-background border-none p-3.5 text-sm font-bold text-text-base outline-none focus:ring-2 focus:ring-brand shadow-sm transition-all" />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-black text-brand/80 uppercase mb-1.5">Seu E-mail</label>
-                          <input required={!user} type="email" value={emailGuest} onChange={(e) => setEmailGuest(e.target.value)} placeholder="exemplo@email.com" className="w-full rounded-2xl bg-white dark:bg-background border-none p-3.5 text-sm font-bold text-text-base outline-none focus:ring-2 focus:ring-brand shadow-sm transition-all" />
-                        </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-brand/80 uppercase mb-1.5">WhatsApp / Celular *</label>
+                        <input required={!user} type="tel" value={whatsappGuest} onChange={handleWhatsappChange} placeholder="(11) 99999-0000" className="w-full rounded-2xl bg-white dark:bg-background border border-border-line/50 p-3.5 text-sm font-bold text-text-base outline-none focus:ring-2 focus:ring-brand shadow-sm transition-all" />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-black text-brand/80 uppercase mb-1.5">E-mail (opcional)</label>
+                        <input type="email" value={emailGuest} onChange={(e) => setEmailGuest(e.target.value)} placeholder="exemplo@email.com" className="w-full rounded-2xl bg-white dark:bg-background border border-border-line/50 p-3.5 text-sm font-bold text-text-base outline-none focus:ring-2 focus:ring-brand shadow-sm transition-all" />
+                        <p className="text-[10px] text-text-muted mt-1.5">Usamos só para lembrar você de criar conta e acumular pontos depois.</p>
                       </div>
                     </div>
                   </div>
@@ -601,15 +604,21 @@ export default function AgendamentoCliente({ onOpenLogin }) {
                 </div>
               </div>
 
-              {jaTinhaConta ? (
-                <p className="text-sm text-text-muted mb-8 leading-relaxed">
-                  O e-mail <strong>{emailGuest}</strong> já possui cadastro. <strong>Faça login</strong> para acompanhar o seu agendamento no painel!
-                </p>
-              ) : !user && emailGuest ? (
-                <p className="text-sm text-text-muted mb-8 leading-relaxed">
-                  Enviamos um link para o e-mail <strong>{emailGuest}</strong>. Confirme sua conta para facilitar seus próximos acessos.
-                </p>
-              ) : null}
+              {agendamentoGhost && !user && (
+                <div className="bg-brand/5 border border-brand/20 rounded-2xl p-5 mb-6 text-left">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 rounded-xl bg-brand/10 text-brand shrink-0">
+                      <Sparkles size={20} />
+                    </div>
+                    <div>
+                      <p className="font-black text-text-base text-sm">Reserva salva como visitante</p>
+                      <p className="text-xs text-text-muted mt-1 leading-relaxed">
+                        Seu horário está garantido. Crie uma conta quando quiser para ver histórico, ganhar pontos de fidelidade e agendar mais rápido.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="border-t border-border-line pt-6 mb-6">
                 <AdicionarCalendario
@@ -625,13 +634,18 @@ export default function AgendamentoCliente({ onOpenLogin }) {
               </div>
               
               <div className="flex flex-col gap-3">
-                {jaTinhaConta && (
-                  <button onClick={() => { onOpenLogin(); navigate(`/${slug}`); }} className="w-full bg-brand text-white py-3.5 rounded-2xl text-sm font-bold hover:brightness-105 transition-all shadow-md cursor-pointer flex items-center justify-center gap-2">
-                    <LogIn size={18}/> Fazer Login Agora
-                  </button>
+                {agendamentoGhost && !user && (
+                  <>
+                    <button onClick={abrirCadastroPosAgendamento} className="w-full bg-brand text-white py-3.5 rounded-2xl text-sm font-black hover:brightness-105 transition-all shadow-md cursor-pointer flex items-center justify-center gap-2">
+                      <Gift size={18}/> Criar conta e guardar histórico
+                    </button>
+                    <button onClick={() => onOpenLogin?.('login')} className="w-full bg-surface border border-border-line py-3.5 rounded-2xl text-sm font-bold text-text-base hover:border-brand transition-all cursor-pointer flex items-center justify-center gap-2">
+                      <LogIn size={18}/> Já tenho conta — entrar
+                    </button>
+                  </>
                 )}
-                <button onClick={() => navigate(`/${slug}`)} className={`w-full bg-surface border border-border-line py-3.5 rounded-2xl text-sm font-bold text-text-base hover:border-brand transition-all cursor-pointer`}>
-                  Voltar para a Barbearia
+                <button onClick={() => navigate(`/${slug}`)} className="w-full bg-surface border border-border-line py-3.5 rounded-2xl text-sm font-bold text-text-base hover:border-brand transition-all cursor-pointer">
+                  {agendamentoGhost && !user ? 'Continuar sem cadastro' : 'Voltar para a Barbearia'}
                 </button>
               </div>
             </div>

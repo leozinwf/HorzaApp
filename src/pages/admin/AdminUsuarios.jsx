@@ -72,6 +72,15 @@ export default function AdminUsuarios() {
 
       if (err2) throw err2;
 
+      const { data: agendamentosGhost, error: errGhost } = await supabase
+        .from('agendamentos')
+        .select('nome_cliente_avulso, whatsapp_cliente_avulso, email_cliente_avulso, criado_em')
+        .eq('barbearia_id', profile.barbearia_id)
+        .is('cliente_id', null)
+        .not('nome_cliente_avulso', 'is', null);
+
+      if (errGhost) throw errGhost;
+
 
 
       const idsAgendados = [...new Set(agendamentos.map(ag => ag.cliente_id))];
@@ -98,6 +107,20 @@ export default function AdminUsuarios() {
 
         unificadosMap.set(user.id, user);
 
+      });
+
+      (agendamentosGhost || []).forEach((ghost) => {
+        const chave = ghost.whatsapp_cliente_avulso || ghost.nome_cliente_avulso;
+        if (!chave || unificadosMap.has(`ghost-${chave}`)) return;
+        unificadosMap.set(`ghost-${chave}`, {
+          id: `ghost-${chave}`,
+          nome: ghost.nome_cliente_avulso,
+          whatsapp: ghost.whatsapp_cliente_avulso,
+          email: ghost.email_cliente_avulso,
+          role: 'cliente',
+          isGhost: true,
+          criado_em: ghost.criado_em,
+        });
       });
 
 
@@ -147,6 +170,11 @@ export default function AdminUsuarios() {
 
 
   const salvarEdicao = async () => {
+
+    if (usuarioSelecionado?.isGhost) {
+      showAlert('Cliente visitante', 'Este cliente ainda não possui conta. Os dados vêm de agendamentos avulsos.', 'info');
+      return;
+    }
 
     try {
 
@@ -448,7 +476,7 @@ export default function AdminUsuarios() {
 
                       <span className="px-3 py-1 rounded-full font-bold text-[10px] uppercase tracking-wider bg-surface border border-border-line text-text-muted">
 
-                        {getRoleLabel(usuario.role)}
+                        {usuario.isGhost ? 'Visitante (sem conta)' : getRoleLabel(usuario.role)}
 
                       </span>
 

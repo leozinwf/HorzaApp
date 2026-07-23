@@ -26,12 +26,15 @@ export const AuthProvider = ({ children }) => {
       if (requestId !== profileRequestId.current) return;
 
       if (!data || data.length === 0) {
-        setProfile(null);
+        setProfile((prev) => (prev === null ? prev : null));
         return;
       }
 
       const userData = data[0];
-      setProfile(userData);
+      setProfile((prev) => {
+        if (prev && JSON.stringify(prev) === JSON.stringify(userData)) return prev;
+        return userData;
+      });
 
       if (userData?.barbearia_id) {
         const { data: barbeariaData, error: barbeariaError } = await supabase

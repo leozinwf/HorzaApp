@@ -1,19 +1,38 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
-import { Shield, Users, CalendarCheck, TrendingUp, Edit, ExternalLink, X, MapPin, Building2, Crown, Search, CheckCircle, Ban, Filter, Trash2, Settings, Plus, UserPlus, Image } from 'lucide-react';
+import { Shield, Users, CalendarCheck, TrendingUp, Edit, ExternalLink, X, MapPin, Building2, Crown, Search, CheckCircle, Ban, Filter, Trash2, Settings, Plus, UserPlus, Image, Headphones, Eye, Coins, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { MASTER_ASSIGNABLE_ROLES, getRoleLabel } from '../../constants/roles';
+import { masterSetTenantPlan, ensureFreeSubscription } from '../../services/planService';
+import { fetchSupportNavStats } from '../../services/masterService';
+import { fetchAllSupportTickets } from '../../services/supportService';
+import { getPlanBadgeClass, getPlanLabel } from '../../constants/planDisplay';
 import { uploadImagemBarbearia } from '../../utils/uploadBarbearia';
+import { PanelNavShell, groupPanelItems } from '../../components/layout/PanelNav';
+import { MASTER_MENU_ITEMS, MASTER_GROUP_ORDER } from '../../constants/masterModules';
+import MasterSuporteSection from '../../components/support/MasterSuporteSection';
+import MasterDashboardSection from '../../components/master/MasterDashboardSection';
+import MasterPlanosSection from '../../components/master/MasterPlanosSection';
+import MasterEmpresaQuickModal from '../../components/master/MasterEmpresaQuickModal';
+import MasterMoedasModal from '../../components/master/MasterMoedasModal';
 
 const CAMPOS_EMPRESA_SALVAR = [
-  'nome', 'slug', 'cnpj', 'telefone', 'cidade', 'estado', 'plano_ativo', 'status',
+  'nome', 'slug', 'cnpj', 'telefone', 'cidade', 'estado', 'status',
   'logo_url', 'capa_url', 'bairro', 'cep', 'rua', 'numero', 'razao_social',
 ];
 
 export default function DashboardMaster() {
-  const [abaAtiva, setAbaAtiva] = useState('empresas'); // 'empresas', 'agendamentos', 'usuarios', 'planos'
+  const [abaAtiva, setAbaAtiva] = useState('dashboard');
+  const [menuSheetAberto, setMenuSheetAberto] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [buscaPlano, setBuscaPlano] = useState('');
+  const [filtroPlano, setFiltroPlano] = useState('todos');
+  const [empresaQuickView, setEmpresaQuickView] = useState(null);
+  const [moedasUsuario, setMoedasUsuario] = useState(null);
+  const [alterandoPlanoId, setAlterandoPlanoId] = useState(null);
+  const [supportStats, setSupportStats] = useState(null);
+  const [recentTickets, setRecentTickets] = useState([]);
 
   // Estados Globais
   const [resumo, setResumo] = useState({ totalBarbearias: 0, totalUsuarios: 0, totalAgendamentos: 0, premium: 0 });
@@ -62,18 +81,42 @@ export default function DashboardMaster() {
     // Carrega Barbearias
     const { data: bData } = await supabase.from('barbearias').select('*, usuarios(count), agendamentos(count)').order('criado_em', { ascending: false });
     if (bData) {
-      setEmpresas(bData);
+      let empresasComPlano = bData;
+      const ids = bData.map((b) => b.id);
+      if (ids.length) {
+        const { data: planos } = await supabase
+          .from('barbearia_plano_atual')
+          .select('barbearia_id, plan_slug, plan_nome')
+          .in('barbearia_id', ids);
+        const mapa = new Map((planos || []).map((p) => [p.barbearia_id, p]));
+        empresasComPlano = bData.map((b) => ({
+          ...b,
+          plan_slug: mapa.get(b.id)?.plan_slug || (b.status === 'pendente' ? 'pending' : 'free'),
+          plan_nome: mapa.get(b.id)?.plan_nome || 'Horza Free',
+        }));
+      }
+      setEmpresas(empresasComPlano);
       setResumo({
-        totalBarbearias: bData.length,
-        totalUsuarios: bData.reduce((acc, curr) => acc + (curr.usuarios?.[0]?.count || 0), 0),
-        totalAgendamentos: bData.reduce((acc, curr) => acc + (curr.agendamentos?.[0]?.count || 0), 0),
-        premium: bData.filter(b => b.plano_ativo === 'premium').length
+        totalBarbearias: empresasComPlano.length,
+        totalUsuarios: empresasComPlano.reduce((acc, curr) => acc + (curr.usuarios?.[0]?.count || 0), 0),
+        totalAgendamentos: empresasComPlano.reduce((acc, curr) => acc + (curr.agendamentos?.[0]?.count || 0), 0),
+        premium: empresasComPlano.filter(b => b.plan_slug === 'pro' || b.plan_slug === 'plus').length
       });
     }
 
     // Carrega Usuários
     const { data: uData } = await supabase.from('usuarios').select('*').order('criado_em', { ascending: false });
     if (uData) setUsuarios(uData);
+
+    try {
+      const stats = await fetchSupportNavStats();
+      setSupportStats(stats);
+      const tickets = await fetchAllSupportTickets();
+      setRecentTickets((tickets || []).slice(0, 5));
+    } catch {
+      setSupportStats(null);
+      setRecentTickets([]);
+    }
 
     setLoading(false);
   };
@@ -98,10 +141,15 @@ export default function DashboardMaster() {
   // ----- Ações de Barbearia -----
   const aprovarBarbearia = async (id) => {
     if(!window.confirm("Aprovar essa barbearia?")) return;
-    const { error } = await supabase.from('barbearias').update({ plano_ativo: 'free', status: 'aprovada' }).eq('id', id);
+    const { error } = await supabase.from('barbearias').update({ status: 'aprovada' }).eq('id', id);
     if (error) {
       toast.error('Erro ao aprovar barbearia.');
       return;
+    }
+    try {
+      await ensureFreeSubscription(id);
+    } catch (err) {
+      console.warn('Subscription free:', err);
     }
     toast.success('Barbearia aprovada com sucesso!');
     carregarDados();
@@ -118,15 +166,17 @@ export default function DashboardMaster() {
     carregarDados();
   };
 
-  const togglePremium = async (id, planoAtual) => {
-    const novoPlano = planoAtual === 'premium' ? 'free' : 'premium';
-    const { error } = await supabase.from('barbearias').update({ plano_ativo: novoPlano }).eq('id', id);
-    if (error) {
-      toast.error('Erro ao alterar plano.');
-      return;
+  const alterarPlanoEmpresa = async (id, planSlug) => {
+    setAlterandoPlanoId(id);
+    try {
+      await masterSetTenantPlan(id, planSlug);
+      toast.success(`Plano alterado para ${getPlanLabel(planSlug)}`);
+      await carregarDados();
+    } catch (err) {
+      toast.error('Erro ao alterar plano: ' + err.message);
+    } finally {
+      setAlterandoPlanoId(null);
     }
-    toast.success(`Plano alterado para ${novoPlano.toUpperCase()}`);
-    carregarDados();
   };
 
   const toggleBanirUsuario = async (id, ativo) => {
@@ -181,7 +231,7 @@ export default function DashboardMaster() {
     if (empresa) {
       setEmpresaEditando({ ...empresa });
     } else {
-      setEmpresaEditando({ nome: '', slug: '', cnpj: '', telefone: '', cidade: '', estado: '', plano_ativo: 'free', status: 'aprovada', logo_url: '', capa_url: '' });
+      setEmpresaEditando({ nome: '', slug: '', cnpj: '', telefone: '', cidade: '', estado: '', status: 'aprovada', logo_url: '', capa_url: '' });
     }
     setIsModalOpen(true);
   };
@@ -379,14 +429,44 @@ export default function DashboardMaster() {
     );
   });
 
-  const barbeariasPremium = empresas.filter((e) => e.plano_ativo === 'premium');
+  const masterNavItems = useMemo(
+    () =>
+      MASTER_MENU_ITEMS.map((item) => {
+        const Icon = item.icon;
+        const suporteBadge = item.id === 'suporte' && supportStats?.badgeCount > 0
+          ? String(supportStats.badgeCount)
+          : undefined;
+        return {
+          ...item,
+          icon: <Icon size={18} strokeWidth={2.25} />,
+          onSelect: () => setAbaAtiva(item.id),
+          badge: suporteBadge,
+          badgeNumeric: Boolean(suporteBadge),
+        };
+      }),
+    [supportStats?.badgeCount]
+  );
+
+  const masterGroups = useMemo(
+    () => groupPanelItems(masterNavItems, MASTER_GROUP_ORDER),
+    [masterNavItems]
+  );
 
   return (
-    <div className="p-6 md:p-10 bg-background min-h-screen pb-24">
+    <PanelNavShell
+      title="Painel Master"
+      subtitle="Controle da plataforma"
+      groups={masterGroups}
+      items={masterNavItems}
+      activeKey={abaAtiva}
+      menuOpen={menuSheetAberto}
+      setMenuOpen={setMenuSheetAberto}
+    >
+    <div className="p-6 md:p-10 bg-background min-h-screen">
       <div className="max-w-6xl mx-auto space-y-8">
         
         {/* CABEÇALHO */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="p-4 bg-red-500/10 text-red-500 rounded-2xl border border-red-500/20 shadow-sm">
               <Shield size={32} />
@@ -396,55 +476,39 @@ export default function DashboardMaster() {
               <p className="text-text-muted font-medium">Controle total da plataforma</p>
             </div>
           </div>
-        </div>
-
-        {/* MÉTRICAS GLOBAIS */}
-        {!loading && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-fadeIn">
-            <div className="bg-surface p-5 rounded-2xl border border-border-line shadow-sm">
-              <div className="text-brand mb-2"><Building2 size={24} /></div>
-              <p className="text-[10px] font-black uppercase text-text-muted">Barbearias</p>
-              <p className="text-2xl font-black text-text-base">{resumo.totalBarbearias}</p>
-            </div>
-            <div className="bg-surface p-5 rounded-2xl border border-border-line shadow-sm">
-              <div className="text-blue-500 mb-2"><Users size={24} /></div>
-              <p className="text-[10px] font-black uppercase text-text-muted">Usuários Totais</p>
-              <p className="text-2xl font-black text-text-base">{resumo.totalUsuarios}</p>
-            </div>
-            <div className="bg-surface p-5 rounded-2xl border border-border-line shadow-sm">
-              <div className="text-green-500 mb-2"><CalendarCheck size={24} /></div>
-              <p className="text-[10px] font-black uppercase text-text-muted">Agendamentos</p>
-              <p className="text-2xl font-black text-text-base">{resumo.totalAgendamentos}</p>
-            </div>
-            <div className="bg-surface p-5 rounded-2xl border border-border-line shadow-sm">
-              <div className="text-amber-500 mb-2"><Crown size={24} /></div>
-              <p className="text-[10px] font-black uppercase text-text-muted">Planos Premium</p>
-              <p className="text-2xl font-black text-text-base">{resumo.premium}</p>
-            </div>
-          </div>
-        )}
-
-        {/* NAVEGAÇÃO DAS ABAS */}
-        <div className="flex gap-2 overflow-x-auto pb-2">
-          <button onClick={() => setAbaAtiva('empresas')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-colors whitespace-nowrap ${abaAtiva === 'empresas' ? 'bg-brand text-white shadow-md' : 'bg-surface border border-border-line text-text-muted hover:border-brand'}`}>
-            Empresas
-          </button>
-          <button onClick={() => setAbaAtiva('agendamentos')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-colors whitespace-nowrap ${abaAtiva === 'agendamentos' ? 'bg-brand text-white shadow-md' : 'bg-surface border border-border-line text-text-muted hover:border-brand'}`}>
-            Lista de Agendamentos
-          </button>
-          <button onClick={() => setAbaAtiva('usuarios')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-colors whitespace-nowrap ${abaAtiva === 'usuarios' ? 'bg-brand text-white shadow-md' : 'bg-surface border border-border-line text-text-muted hover:border-brand'}`}>
-            Lista de Usuários
-          </button>
-          <button onClick={() => setAbaAtiva('planos')} className={`px-5 py-3 rounded-xl font-bold text-sm transition-colors whitespace-nowrap flex items-center gap-2 ${abaAtiva === 'planos' ? 'bg-brand text-white shadow-md' : 'bg-surface border border-border-line text-text-muted hover:border-brand'}`}>
-            <Crown size={16} /> Planos Premium
-          </button>
+          {(supportStats?.badgeCount || 0) > 0 && (
+            <button
+              type="button"
+              onClick={() => setAbaAtiva('suporte')}
+              className="relative p-3 rounded-2xl bg-red-500/10 border border-red-500/25 text-red-600 hover:bg-red-500/15 transition-colors"
+              title="Chamados de suporte abertos"
+            >
+              <Headphones size={22} />
+              <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center">
+                {supportStats.badgeCount}
+              </span>
+            </button>
+          )}
         </div>
 
         {loading ? (
           <div className="flex justify-center py-10"><div className="animate-spin h-8 w-8 border-4 border-brand border-t-transparent rounded-full"></div></div>
         ) : (
           <>
-            {/* ==================== ABA EMPRESAS ==================== */}
+            {abaAtiva === 'dashboard' && (
+              <MasterDashboardSection
+                resumo={resumo}
+                empresas={empresas}
+                usuarios={usuarios}
+                supportStats={supportStats}
+                recentTickets={recentTickets}
+                onNavigate={setAbaAtiva}
+                loading={loading}
+              />
+            )}
+
+            {abaAtiva !== 'dashboard' && (
+            <>
             {abaAtiva === 'empresas' && (
               <div className="space-y-6 animate-fadeIn">
                 <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-surface p-4 rounded-2xl border border-border-line shadow-sm">
@@ -470,19 +534,20 @@ export default function DashboardMaster() {
                         <div className="flex justify-between items-start mb-4">
                           <div>
                             <h3 className="text-xl font-black text-text-base flex items-center gap-2">
-                              {emp.nome} 
-                              {emp.plano_ativo === 'premium' && <Crown size={18} className="text-amber-500" />}
+                              {emp.nome}
+                              {emp.plan_slug === 'pro' && <Crown size={18} className="text-brand" />}
+                              {emp.plan_slug === 'plus' && <Sparkles size={18} className="text-violet-500" />}
                             </h3>
                             <p className="text-sm text-text-muted flex items-center gap-1 mt-1">
                               <MapPin size={14} /> {emp.cidade ? `${emp.cidade} - ${emp.estado}` : 'Sem endereço'}
                             </p>
                           </div>
-                          {emp.plano_ativo === 'pendente_aprovacao' || emp.status === 'pendente' ? (
+                          {emp.status === 'pendente' ? (
                             <span className="text-[10px] font-black uppercase px-2.5 py-1.5 rounded-lg tracking-wider bg-orange-500/10 text-orange-500 border border-orange-500/20">Pendente</span>
                           ) : (
-                            <button onClick={() => togglePremium(emp.id, emp.plano_ativo)} className={`text-[10px] font-black uppercase px-2.5 py-1.5 rounded-lg tracking-wider cursor-pointer transition-colors ${emp.plano_ativo === 'premium' ? 'bg-amber-500/10 text-amber-500 hover:bg-amber-500/20' : 'bg-background border border-border-line text-text-muted hover:border-brand'}`}>
-                              {emp.plano_ativo === 'premium' ? 'Remover Premium' : 'Ativar Premium'}
-                            </button>
+                            <span className={`text-[10px] font-black uppercase px-2.5 py-1.5 rounded-lg ${getPlanBadgeClass(emp.plan_slug || 'free')}`}>
+                              {getPlanLabel(emp.plan_slug, emp.plan_nome)}
+                            </span>
                           )}
                         </div>
 
@@ -499,7 +564,7 @@ export default function DashboardMaster() {
                       </div>
 
                       <div className="flex flex-wrap gap-2 mt-auto">
-                        {emp.plano_ativo === 'pendente_aprovacao' || emp.status === 'pendente' ? (
+                        {emp.status === 'pendente' ? (
                           <>
                             <button onClick={() => aprovarBarbearia(emp.id)} className="flex-1 bg-green-500/10 text-green-600 py-2.5 rounded-xl text-sm font-bold hover:bg-green-500 hover:text-white transition-colors flex justify-center items-center gap-2 cursor-pointer">
                               <CheckCircle size={16} /> Aprovar
@@ -510,6 +575,9 @@ export default function DashboardMaster() {
                           </>
                         ) : (
                           <>
+                            <button onClick={() => setEmpresaQuickView(emp)} className="flex-1 bg-background border border-border-line text-text-base py-2.5 rounded-xl text-sm font-bold hover:border-brand transition-colors flex justify-center items-center gap-2 cursor-pointer">
+                              <Eye size={16} /> Ver
+                            </button>
                             <button onClick={() => abrirModalEdicao(emp)} className="flex-1 bg-background border border-border-line text-text-base py-2.5 rounded-xl text-sm font-bold hover:border-brand transition-colors flex justify-center items-center gap-2 cursor-pointer">
                               <Edit size={16} /> Editar
                             </button>
@@ -613,6 +681,7 @@ export default function DashboardMaster() {
                           <td className="py-4 px-4">
                             <p className="text-sm font-bold text-text-base">{u.nome}</p>
                             <p className="text-xs text-text-muted">{u.cpf || 'Sem CPF'}</p>
+                            <p className="text-xs text-brand font-bold mt-0.5">{u.saldo_pontos || 0} moedas</p>
                           </td>
                           <td className="py-4 px-4">
                             <p className="text-sm text-text-base">{u.email}</p>
@@ -638,6 +707,9 @@ export default function DashboardMaster() {
                           </td>
                           <td className="py-4 px-4 text-right">
                             <div className="flex justify-end gap-2">
+                              <button onClick={() => setMoedasUsuario(u)} className="p-1.5 bg-amber-500/10 text-amber-600 hover:bg-amber-500 hover:text-white rounded-lg transition-colors cursor-pointer" title="Dar moedas">
+                                <Coins size={16} />
+                              </button>
                               <button onClick={() => abrirModalEditarUsuario(u)} className="p-1.5 bg-brand/10 text-brand hover:bg-brand hover:text-white rounded-lg transition-colors cursor-pointer" title="Editar usuário">
                                 <Edit size={16} />
                               </button>
@@ -660,63 +732,40 @@ export default function DashboardMaster() {
               </div>
             )}
 
+            {abaAtiva === 'suporte' && <MasterSuporteSection />}
+
             {/* ==================== ABA PLANOS PREMIUM ==================== */}
             {abaAtiva === 'planos' && (
-              <div className="space-y-6 animate-fadeIn">
-                <div className="bg-gradient-to-r from-amber-500/10 to-brand/10 border border-amber-500/20 p-6 rounded-3xl">
-                  <h2 className="text-lg font-black text-text-base flex items-center gap-2 mb-2">
-                    <Crown size={22} className="text-amber-500" /> Gestão de Planos Premium
-                  </h2>
-                  <p className="text-sm text-text-muted">
-                    {barbeariasPremium.length} barbearia(s) com plano Premium ativo de {empresas.length} cadastradas.
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                  {empresas.map((emp) => (
-                    <div key={emp.id} className="bg-surface border border-border-line p-6 rounded-3xl shadow-sm">
-                      <div className="flex justify-between items-start mb-4">
-                        <div>
-                          <h3 className="text-lg font-black text-text-base flex items-center gap-2">
-                            {emp.nome}
-                            {emp.plano_ativo === 'premium' && <Crown size={16} className="text-amber-500" />}
-                          </h3>
-                          <p className="text-xs text-text-muted mt-1">/{emp.slug}</p>
-                        </div>
-                        <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-lg ${
-                          emp.plano_ativo === 'premium'
-                            ? 'bg-amber-500/10 text-amber-600'
-                            : emp.plano_ativo === 'free'
-                              ? 'bg-background border border-border-line text-text-muted'
-                              : 'bg-orange-500/10 text-orange-500'
-                        }`}>
-                          {emp.plano_ativo || 'free'}
-                        </span>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => togglePremium(emp.id, emp.plano_ativo)}
-                          disabled={emp.status === 'pendente' || emp.plano_ativo === 'pendente_aprovacao'}
-                          className="flex-1 bg-brand text-white py-2.5 rounded-xl text-sm font-bold hover:brightness-110 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
-                        >
-                          {emp.plano_ativo === 'premium' ? 'Remover Premium' : 'Ativar Premium'}
-                        </button>
-                        <Link
-                          to={`/${emp.slug}/admin`}
-                          className="px-4 py-2.5 bg-background border border-border-line rounded-xl text-sm font-bold hover:border-brand flex items-center gap-1"
-                        >
-                          <Settings size={16} /> Painel
-                        </Link>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <MasterPlanosSection
+                empresas={empresas}
+                busca={buscaPlano}
+                onBuscaChange={setBuscaPlano}
+                filtroPlano={filtroPlano}
+                onFiltroChange={setFiltroPlano}
+                onAlterarPlano={alterarPlanoEmpresa}
+                onQuickView={setEmpresaQuickView}
+                onEdit={abrirModalEdicao}
+                alterandoPlanoId={alterandoPlanoId}
+              />
+            )}
+            </>
             )}
           </>
         )}
 
       </div>
+
+      <MasterEmpresaQuickModal
+        empresa={empresaQuickView}
+        onClose={() => setEmpresaQuickView(null)}
+        onEdit={abrirModalEdicao}
+      />
+
+      <MasterMoedasModal
+        usuario={moedasUsuario}
+        onClose={() => setMoedasUsuario(null)}
+        onSuccess={carregarDados}
+      />
 
       {/* MODAL DE EXCLUSÃO DE USUÁRIO */}
       {isModalDeleteUserOpen && usuarioParaDeletar && (
@@ -950,12 +999,10 @@ export default function DashboardMaster() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-black text-text-muted uppercase mb-1.5">Plano Ativo</label>
-                  <select name="plano_ativo" value={empresaEditando.plano_ativo || 'free'} onChange={(e) => setEmpresaEditando({...empresaEditando, plano_ativo: e.target.value})} className="w-full bg-background border border-border-line rounded-xl p-3 text-sm font-bold focus:border-brand outline-none cursor-pointer">
-                    <option value="pendente_aprovacao">Pendente</option>
-                    <option value="free">Free</option>
-                    <option value="premium">Premium</option>
-                  </select>
+                  <label className="block text-xs font-black text-text-muted uppercase mb-1.5">Plano (via assinatura)</label>
+                  <p className="w-full bg-background/50 border border-border-line rounded-xl p-3 text-sm font-bold text-text-muted">
+                    Gerenciado em Assinaturas — não editar aqui.
+                  </p>
                 </div>
                 <div>
                   <label className="block text-xs font-black text-text-muted uppercase mb-1.5">Status do Painel</label>
@@ -1023,5 +1070,6 @@ export default function DashboardMaster() {
       )}
 
     </div>
+    </PanelNavShell>
   );
 }

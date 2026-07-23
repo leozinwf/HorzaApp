@@ -423,3 +423,23 @@ entrypoint = "./functions/conectar-stripe/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/conectar-stripe/*.html" ]
+
+[functions.create-billing-checkout]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/create-billing-checkout/index.ts"
+
+[functions.create-billing-portal]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/create-billing-portal/index.ts"
+
+[functions.sync-billing-session]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/sync-billing-session/index.ts"
+
+[functions.stripe-billing-webhook]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/stripe-billing-webhook/index.ts"

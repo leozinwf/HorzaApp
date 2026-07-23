@@ -9,6 +9,9 @@ import {
 } from 'lucide-react';
 import { auditLogService } from '../../services/auditLogService';
 import HistoricoMudancas from '../../components/admin/HistoricoMudancas';
+import ProSection from '../../components/shared/ProSection';
+import { FinanceiroInteligenteBlock, ComissaoPlusBlock } from '../../components/shared/ProModuleBlocks';
+import { FEATURE_KEYS } from '../../constants/planFeatures';
 
 const parseTiposCategoria = (tipo) =>
   (tipo || '').split(',').map((t) => t.trim()).filter(Boolean);
@@ -354,7 +357,7 @@ export default function AdminFinanceiro() {
   const pctSaidaPaga = totalSaidas > 0 ? (saidasConcluidas / totalSaidas) * 100 : 0;
 
   return (
-    <div className="p-4 md:p-10 pb-24 md:pb-10 max-w-7xl mx-auto">
+    <div className="p-4 md:p-10 md:pb-10 max-w-7xl mx-auto">
       
       {/* CABEÇALHO LIMPO */}
       <header className="mb-6">
@@ -790,6 +793,24 @@ export default function AdminFinanceiro() {
           </div>
         </div>
       )}
+
+      <ProSection
+        featureKey={FEATURE_KEYS.FINANCEIRO_INTELIGENTE}
+        title="Financeiro Inteligente"
+        description="Gráficos, exportação e visão consolidada — Horza Pro."
+        overlay
+      >
+        <FinanceiroInteligenteBlock />
+      </ProSection>
+
+      <ProSection
+        featureKey={FEATURE_KEYS.COMISSAO_CONTROLE}
+        title="Comissões integradas"
+        description="Folha de pagamento e extrato por barbeiro — Horza Plus."
+        overlay
+      >
+        <ComissaoPlusBlock />
+      </ProSection>
 
       <HistoricoMudancas barbeariaId={profile?.barbearia_id} modulo="financeiro" />
 

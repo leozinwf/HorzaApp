@@ -3,6 +3,9 @@ import { useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabaseClient';
 import { CreditCard, Wallet, QrCode, CheckCircle2, AlertCircle, Link as LinkIcon, ExternalLink } from 'lucide-react';
+import ProSection from '../../components/shared/ProSection';
+import { GorjetaDigitalBlock } from '../../components/shared/ProModuleBlocks';
+import { FEATURE_KEYS } from '../../constants/planFeatures';
 
 export default function AdminPagamentos() {
   const { slug } = useParams();
@@ -222,6 +225,15 @@ export default function AdminPagamentos() {
           </div>
         </div>
       </div>
+
+      <ProSection
+        featureKey={FEATURE_KEYS.GORJETA_DIGITAL}
+        title="Gorjeta Digital"
+        description="PIX ou cartão após o atendimento — Horza Pro."
+        overlay
+      >
+        <GorjetaDigitalBlock />
+      </ProSection>
 
     </div>
   );

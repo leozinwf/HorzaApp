@@ -38,7 +38,22 @@ import AdminPagamentos from './pages/admin/AdminPagamentos';
 import AdminFidelidade from './pages/admin/AdminFidelidade';
 import AdminUsuarios from './pages/admin/AdminUsuarios';
 import AdminIntegracoes from './pages/admin/AdminIntegracoes';
+import AdminComunicados from './pages/admin/AdminComunicados';
+import AdminMeuPlano from './pages/admin/AdminMeuPlano';
+import AdminUnidades from './pages/admin/plus/AdminUnidades';
+import AdminComissoes from './pages/admin/plus/AdminComissoes';
+import AdminHeatmap from './pages/admin/plus/AdminHeatmap';
+import AdminInteligencia from './pages/admin/plus/AdminInteligencia';
+import AdminBackup from './pages/admin/plus/AdminBackup';
+import AdminDominio from './pages/admin/plus/AdminDominio';
 import StripeCallback from './pages/admin/StripeCallback';
+
+import PaginaSuporte from './pages/institutional/PaginaSuporte';
+import PaginaContato from './pages/institutional/PaginaContato';
+import PaginaTermos from './pages/institutional/PaginaTermos';
+import PaginaConsentimento from './pages/institutional/PaginaConsentimento';
+import PaginaPrivacidade from './pages/institutional/PaginaPrivacidade';
+import PaginaQuemSomos from './pages/institutional/PaginaQuemSomos';
 
 // Componente para proteger rotas normais
 function ProtectedRoute({ children, allowedRoles }) {
@@ -74,8 +89,8 @@ function AppContent() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const openLogin = () => {
-    setLoginModalMode('login');
+  const openLogin = (mode = 'login') => {
+    setLoginModalMode(mode === 'register' ? 'register' : 'login');
     setIsLoginModalOpen(true);
   };
 
@@ -83,10 +98,16 @@ function AppContent() {
     <>
       <MenuNavegacao onOpenLogin={openLogin} />
 
-      <main className="pb-24 md:pb-0 min-h-screen bg-background">
+      <main className="pb-safe-nav md:pb-0 md:pt-[var(--horza-header-h)] min-h-screen bg-background">
           <Routes>
             <Route path="/" element={<HomeMarketplace />} />
             <Route path="/cadastro-barbearia" element={<CadastroBarbearia />} />
+            <Route path="/suporte" element={<PaginaSuporte />} />
+            <Route path="/contato" element={<PaginaContato />} />
+            <Route path="/termos" element={<PaginaTermos />} />
+            <Route path="/consentimento" element={<PaginaConsentimento />} />
+            <Route path="/privacidade" element={<PaginaPrivacidade />} />
+            <Route path="/quem-somos" element={<PaginaQuemSomos />} />
             <Route path="/master" element={<SuperAdminRoute><DashboardMaster /></SuperAdminRoute>} />
 
             <Route path="/area-cliente" element={<ProtectedRoute allowedRoles={['cliente', 'admin', 'gerente', 'funcionario', 'super_admin']}><AreaCliente /></ProtectedRoute>}/>
@@ -109,12 +130,20 @@ function AppContent() {
               <Route path="servicos" element={<AdminServicos />} />
               <Route path="estoque" element={<AdminEstoque />} />
               <Route path="pagamentos" element={<AdminPagamentos />} />
+              <Route path="plano" element={<AdminMeuPlano />} />
               <Route path="pagamentos/callback" element={<StripeCallback />} />
               <Route path="empresa" element={<AdminEmpresa />} />
               <Route path="financeiro" element={<AdminFinanceiro />} />
               <Route path="permissoes" element={<AdminPermissoes />} />
               <Route path="integracoes" element={<AdminIntegracoes />} />
+              <Route path="comunicados" element={<AdminComunicados />} />
               <Route path="fidelidade" element={<AdminFidelidade />} />
+              <Route path="unidades" element={<AdminUnidades />} />
+              <Route path="comissoes" element={<AdminComissoes />} />
+              <Route path="heatmap" element={<AdminHeatmap />} />
+              <Route path="inteligencia" element={<AdminInteligencia />} />
+              <Route path="backup" element={<AdminBackup />} />
+              <Route path="dominio" element={<AdminDominio />} />
             </Route>
 
             <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,11 +1,14 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { Calendar, CheckCircle2, Link2, Unlink, MessageCircle, AlertCircle } from 'lucide-react';
+import { Calendar, CheckCircle2, Link2, Unlink, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
   conectarGoogleCalendar,
   desconectarGoogleCalendar,
 } from '../../services/agendamentoNotificacaoService';
+import ProSection from '../../components/shared/ProSection';
+import { WhatsAppAutomaticoBlock } from '../../components/shared/ProModuleBlocks';
+import { FEATURE_KEYS } from '../../constants/planFeatures';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
@@ -93,7 +96,7 @@ export default function AdminIntegracoes() {
   };
 
   return (
-    <div className="p-6 md:p-10 max-w-3xl space-y-8 pb-24">
+    <div className="p-6 md:p-10 max-w-3xl space-y-8">
       <header>
         <h1 className="text-2xl font-black text-text-base">Integrações</h1>
         <p className="text-sm text-text-muted mt-1">
@@ -154,38 +157,32 @@ export default function AdminIntegracoes() {
             <code className="text-brand">GOOGLE_CLIENT_ID</code> / <code className="text-brand">GOOGLE_CLIENT_SECRET</code> nos secrets do Supabase.
           </p>
         )}
-      </div>
 
-      <div className="bg-surface border border-border-line rounded-3xl p-6 md:p-8 space-y-4 shadow-sm">
-        <div className="flex items-start gap-4">
-          <div className="p-3 rounded-2xl bg-green-500/10 text-success shrink-0">
-            <MessageCircle size={24} />
-          </div>
-          <div>
-            <h2 className="font-black text-lg text-text-base">WhatsApp — aviso ao barbeiro</h2>
-            <p className="text-sm text-text-muted mt-1 leading-relaxed">
-              Quando um cliente confirma um agendamento, o sistema envia mensagem automática para o WhatsApp do profissional
-              (campo WhatsApp no perfil) ou telefone da barbearia.
-            </p>
-            <ul className="text-sm text-text-muted mt-3 space-y-1 list-disc pl-5">
-              <li>Nome, e-mail e telefone do cliente</li>
-              <li>Data, horário e serviço</li>
-              <li>Nome do profissional</li>
-            </ul>
-            <p className="text-xs text-text-muted mt-4 bg-background border border-border-line rounded-xl p-3">
-              Para envio <strong>automático</strong> via API, configure no Supabase os secrets
-              {' '}
-              <code className="text-brand">WHATSAPP_ACCESS_TOKEN</code> e
-              {' '}
-              <code className="text-brand">WHATSAPP_PHONE_ID</code> (WhatsApp Cloud API / Meta).
-              Sem isso, o link wa.me fica disponível como fallback interno.
-            </p>
-            <p className="text-xs text-brand mt-2 font-bold">
-              Seu WhatsApp cadastrado: {profile?.whatsapp || '—'} (atualize em Equipe / Perfil)
-            </p>
-          </div>
+        <div className="border-t border-border-line pt-5 space-y-3 text-sm text-text-muted">
+          <p className="font-black text-text-base text-sm">Como configurar o Google Calendar</p>
+          <ol className="list-decimal list-inside space-y-2 text-xs leading-relaxed">
+            <li>No <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer" className="text-brand font-bold hover:underline">Google Cloud Console</a>, crie um projeto e ative a <strong>Google Calendar API</strong>.</li>
+            <li>Em Credenciais → OAuth 2.0, crie um ID do cliente tipo <strong>Aplicativo da Web</strong>.</li>
+            <li>Em URIs autorizados de JavaScript, inclua <code className="text-brand">{typeof window !== 'undefined' ? window.location.origin : 'https://seu-dominio.com'}</code> e <code className="text-brand">http://localhost:5173</code> (dev).</li>
+            <li>Copie o Client ID para <code className="text-brand">VITE_GOOGLE_CLIENT_ID</code> no arquivo <code>.env</code> do frontend.</li>
+            <li>No Supabase → Edge Functions → Secrets, configure <code className="text-brand">GOOGLE_CLIENT_ID</code> e <code className="text-brand">GOOGLE_CLIENT_SECRET</code>.</li>
+            <li>Deploy das functions: <code className="text-brand">supabase functions deploy google-calendar-auth notificar-agendamento</code></li>
+            <li>Cada barbeiro/admin conecta a própria conta em Integrações. Novos agendamentos criam evento no Google Calendar dele.</li>
+          </ol>
+          <p className="text-xs">
+            O OAuth usa escopo <code className="text-brand">calendar.events</code>. O token fica salvo em <code>usuarios.google_calendar_token</code>.
+          </p>
         </div>
       </div>
+
+      <ProSection
+        featureKey={FEATURE_KEYS.WHATSAPP_AUTOMATICO}
+        title="WhatsApp Automático"
+        description="Confirmação, lembrete 24h e pós-atendimento — Horza Pro."
+        overlay
+      >
+        <WhatsAppAutomaticoBlock />
+      </ProSection>
     </div>
   );
 }

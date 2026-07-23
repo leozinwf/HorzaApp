@@ -130,7 +130,7 @@ serve(async (req) => {
     const { data: ag, error } = await supabase
       .from('agendamentos')
       .select(`
-        id, data_hora, nome_cliente_avulso, whatsapp_cliente_avulso,
+        id, data_hora, nome_cliente_avulso, whatsapp_cliente_avulso, email_cliente_avulso,
         barbearias ( nome, telefone, rua, numero, bairro, cidade, estado ),
         barbeiros:usuarios!agendamentos_barbeiro_id_fkey ( id, nome, whatsapp, google_calendar_token, email ),
         clientes:usuarios!agendamentos_cliente_id_fkey ( nome, whatsapp, email ),
@@ -142,7 +142,7 @@ serve(async (req) => {
     if (error || !ag) throw error || new Error('Agendamento não encontrado');
 
     const clienteNome = ag.nome_cliente_avulso || ag.clientes?.nome || 'Cliente';
-    const clienteEmail = ag.clientes?.email || '—';
+    const clienteEmail = ag.email_cliente_avulso || ag.clientes?.email || '—';
     const clienteWhatsapp = ag.whatsapp_cliente_avulso || ag.clientes?.whatsapp || '—';
     const dataFmt = formatarDataHora(ag.data_hora);
 

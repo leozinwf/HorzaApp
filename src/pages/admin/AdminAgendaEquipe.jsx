@@ -5,6 +5,9 @@ import { useModal } from '../../context/ModalContext';
 import { Calendar, Clock, User, Phone, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, Scissors, Filter, Info, X, DollarSign, CreditCard, Wallet, PlusCircle, MinusCircle, RotateCcw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getDayBoundsISO, getHojeFormatoHTML } from '../../utils/formatters';
+import ProSection from '../../components/shared/ProSection';
+import { AgendaInteligenteBlock } from '../../components/shared/ProModuleBlocks';
+import { FEATURE_KEYS } from '../../constants/planFeatures';
 
 export default function AdminAgendaEquipe() {
   const { profile } = useAuth();
@@ -193,7 +196,7 @@ export default function AdminAgendaEquipe() {
   const slotsHorarios = gerarSlots().filter((s) => !horariosOcultos.includes(s));
 
   return (
-    <div className="p-4 md:p-10 pb-24 md:pb-10 max-w-5xl mx-auto">
+    <div className="p-4 md:p-10 md:pb-10 max-w-5xl mx-auto">
       <div className="mb-6">
         <h1 className="text-2xl font-black text-text-base">Agenda de Horários</h1>
         <p className="text-sm text-text-muted mt-1">Visualize horários livres e ocupados da equipe.</p>
@@ -306,6 +309,15 @@ export default function AdminAgendaEquipe() {
           </div>
         )}
       </div>
+
+      <ProSection
+        featureKey={FEATURE_KEYS.AGENDA_INTELIGENTE}
+        title="Agenda Inteligente"
+        description="Lista de espera, recorrentes e encaixe automático — Horza Pro."
+        overlay
+      >
+        <AgendaInteligenteBlock />
+      </ProSection>
 
       {/* MODAL DETALHE DO AGENDAMENTO & CHECKOUT */}
       {agendamentoDetalhe && (

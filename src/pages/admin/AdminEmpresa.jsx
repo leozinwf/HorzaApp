@@ -4,6 +4,10 @@ import { useModal } from '../../context/ModalContext'; // ✨ Importando o novo 
 import { supabase } from '../../services/supabaseClient';
 import { uploadImagemBarbearia } from '../../utils/uploadBarbearia';
 import { Building2, Save, MapPin, Clock, FileText, Phone, AtSign, Image } from 'lucide-react';
+import ProSection from '../../components/shared/ProSection';
+import PersonalizacaoMarcaPanel from '../../components/admin/PersonalizacaoMarcaPanel';
+import QrCodeCadeiraPanel from '../../components/admin/QrCodeCadeiraPanel';
+import { FEATURE_KEYS } from '../../constants/planFeatures';
 
 export default function AdminEmpresa() {
     const { profile } = useAuth();
@@ -36,6 +40,8 @@ export default function AdminEmpresa() {
     const [diasFuncionamento, setDiasFuncionamento] = useState([1, 2, 3, 4, 5, 6]);
     const [logoUrl, setLogoUrl] = useState('');
     const [capaUrl, setCapaUrl] = useState('');
+    const [corPrimaria, setCorPrimaria] = useState('#b8924a');
+    const [slugEmpresa, setSlugEmpresa] = useState('');
     const [enviandoLogo, setEnviandoLogo] = useState(false);
     const [enviandoCapa, setEnviandoCapa] = useState(false);
 
@@ -74,6 +80,8 @@ export default function AdminEmpresa() {
                 if (data.dias_funcionamento) setDiasFuncionamento(data.dias_funcionamento);
                 if (data.logo_url) setLogoUrl(data.logo_url);
                 if (data.capa_url) setCapaUrl(data.capa_url);
+                if (data.cor_primaria) setCorPrimaria(data.cor_primaria);
+                if (data.slug) setSlugEmpresa(data.slug);
             }
         } catch (err) {
             console.error(err.message);
@@ -145,7 +153,8 @@ export default function AdminEmpresa() {
                 chave_pix: chavePix, gateway_pagamento: gateway, redes_sociais: { instagram },
                 hora_abertura: `${horaAbertura}:00`, hora_fechamento: `${horaFechamento}:00`, dias_funcionamento: diasFuncionamento,
                 logo_url: logoUrl || null,
-                capa_url: capaUrl || null
+                capa_url: capaUrl || null,
+                cor_primaria: corPrimaria || null,
             }).eq('id', profile.barbearia_id);
 
             if (error) throw error;
@@ -308,6 +317,33 @@ export default function AdminEmpresa() {
                         </div>
                     </div>
                 </div>
+
+                <ProSection
+                    featureKey={FEATURE_KEYS.PERSONALIZACAO_COR}
+                    title="Personalização da marca"
+                    description="Cor primária e identidade visual — Horza Pro."
+                    overlay
+                >
+                    <PersonalizacaoMarcaPanel
+                      barbeariaId={profile?.barbearia_id}
+                      corInicial={corPrimaria}
+                      slug={slugEmpresa}
+                      onSaved={setCorPrimaria}
+                    />
+                </ProSection>
+
+                <ProSection
+                    featureKey={FEATURE_KEYS.QR_CODE_CADEIRA}
+                    title="QR Code na cadeira"
+                    description="Agendamento rápido por profissional — Horza Pro."
+                    overlay
+                >
+                    <QrCodeCadeiraPanel
+                      barbeariaId={profile?.barbearia_id}
+                      slug={slugEmpresa}
+                      nomeBarbearia={nome}
+                    />
+                </ProSection>
 
                 <div className="sticky bottom-24 md:bottom-8 z-10 flex justify-end">
                     <button type="submit" disabled={saving} className="bg-brand hover:bg-brand-hover text-white font-bold px-8 py-4 rounded-xl cursor-pointer shadow-xl shadow-brand/20 transition-all flex items-center gap-2">

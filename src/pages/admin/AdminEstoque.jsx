@@ -8,6 +8,9 @@ import toast from 'react-hot-toast';
 import CurrencyInput from 'react-currency-input-field';
 import { auditLogService } from '../../services/auditLogService';
 import HistoricoMudancas from '../../components/admin/HistoricoMudancas';
+import ProSection from '../../components/shared/ProSection';
+import { EstoqueInteligenteBlock } from '../../components/shared/ProModuleBlocks';
+import { FEATURE_KEYS } from '../../constants/planFeatures';
 
 export default function AdminEstoque() {
   const { profile } = useAuth();
@@ -549,6 +552,14 @@ export default function AdminEstoque() {
           </div>
         </div>
       )}
+      <ProSection
+        featureKey={FEATURE_KEYS.ESTOQUE_INTELIGENTE}
+        title="Estoque Inteligente"
+        description="Alertas preditivos e sugestão de compra — Horza Pro."
+        overlay
+      >
+        <EstoqueInteligenteBlock />
+      </ProSection>
     </div>
   );
 }

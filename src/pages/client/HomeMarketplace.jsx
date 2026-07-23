@@ -4,30 +4,48 @@ import { MapPin, Scissors, Search, Star, RefreshCw, WifiOff } from 'lucide-react
 import { supabase } from '../../services/supabaseClient';
 import MapaInterativo from '../../components/shared/MapaInterativo';
 import BotaoRota from '../../components/shared/BotaoRota';
+import HorzaFooter from '../../components/layout/HorzaFooter';
 
-const CAMPOS = 'id, nome, slug, cidade, bairro, rua, numero, estado, cep, latitude, longitude, logo_url, capa_url, plano_ativo';
+const CAMPOS = 'id, nome, slug, cidade, bairro, rua, numero, estado, cep, latitude, longitude, logo_url, capa_url';
 const LOADING_TIMEOUT_MS = 12000;
 const GEO_TIMEOUT_MS = 6000;
 
 const ordenarBarbearias = (lista) =>
   [...lista].sort((a, b) => {
-    if (a.plano_ativo === 'premium' && b.plano_ativo !== 'premium') return -1;
-    if (b.plano_ativo === 'premium' && a.plano_ativo !== 'premium') return 1;
+    const aPro = a.plan_slug === 'pro' || a.plan_slug === 'plus';
+    const bPro = b.plan_slug === 'pro' || b.plan_slug === 'plus';
+    if (aPro && !bPro) return -1;
+    if (bPro && !aPro) return 1;
     if (a.distancia_km != null && b.distancia_km != null) return a.distancia_km - b.distancia_km;
     return (a.nome || '').localeCompare(b.nome || '', 'pt-BR');
   });
+
+async function enriquecerComPlanos(lista) {
+  if (!lista?.length) return lista;
+  const ids = lista.map((b) => b.id);
+  const { data: planos } = await supabase
+    .from('barbearia_plano_atual')
+    .select('barbearia_id, plan_slug, marketplace_premium')
+    .in('barbearia_id', ids);
+
+  const mapaPlanos = new Map((planos || []).map((p) => [p.barbearia_id, p]));
+  return lista.map((b) => ({
+    ...b,
+    plan_slug: mapaPlanos.get(b.id)?.plan_slug || 'free',
+    marketplace_premium: mapaPlanos.get(b.id)?.marketplace_premium ?? false,
+  }));
+}
 
 async function buscarCatalogoAprovado() {
   const { data, error } = await supabase
     .from('barbearias')
     .select(CAMPOS)
     .not('slug', 'is', null)
-    .neq('status', 'pendente')
-    .neq('plano_ativo', 'pendente_aprovacao')
+    .eq('status', 'aprovada')
     .order('criado_em', { ascending: false });
 
   if (error) throw error;
-  return data || [];
+  return enriquecerComPlanos(data || []);
 }
 
 function mesclarComDistancias(catalogo, proximas = []) {
@@ -89,13 +107,12 @@ export default function HomeMarketplace() {
           .from('barbearias')
           .select(CAMPOS)
           .not('slug', 'is', null)
-          .neq('status', 'pendente')
-          .neq('plano_ativo', 'pendente_aprovacao')
+          .eq('status', 'aprovada')
           .or(`nome.ilike.%${query}%,cidade.ilike.%${query}%,bairro.ilike.%${query}%`)
           .limit(20);
         if (error) throw error;
         if (fetchId !== fetchIdRef.current) return;
-        setBarbearias(ordenarBarbearias(data || []));
+        setBarbearias(ordenarBarbearias(await enriquecerComPlanos(data || [])));
         setErroCarregamento(false);
         return;
       }
@@ -183,7 +200,8 @@ export default function HomeMarketplace() {
   const carregandoInicial = aguardandoGeo || (loading && barbearias.length === 0);
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center pt-10 px-6 pb-24">
+    <div className="min-h-screen bg-background flex flex-col">
+      <div className="flex-1 w-full flex flex-col items-center pt-10 px-6 pb-6">
       <div className="w-full max-w-4xl space-y-8">
         <div className="text-center space-y-3">
           <h1 className="text-4xl md:text-5xl font-black text-brand tracking-tight">Horza App</h1>
@@ -268,7 +286,9 @@ export default function HomeMarketplace() {
                   </div>
                   <div className="p-4 flex-1 min-w-0 flex flex-col justify-center">
                     <div className="flex items-start gap-1">
-                      {b.plano_ativo === 'premium' && <Star size={14} className="text-amber-500 shrink-0 mt-0.5 fill-amber-500" />}
+                      {(b.plan_slug === 'pro' || b.plan_slug === 'plus') && (
+                        <Star size={14} className="text-amber-500 shrink-0 mt-0.5 fill-amber-500" title="Horza Pro" />
+                      )}
                       <h2 className="text-base font-black text-text-base group-hover:text-brand truncate">{b.nome}</h2>
                     </div>
                     <p className="text-xs text-text-muted mt-1 flex items-center gap-1 truncate">
@@ -315,6 +335,8 @@ export default function HomeMarketplace() {
           </div>
         )}
       </div>
+      </div>
+      <HorzaFooter />
     </div>
   );
 }
