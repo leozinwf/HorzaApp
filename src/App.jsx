@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ModalProvider } from './context/ModalContext';
 import { supabase } from './services/supabaseClient';
@@ -7,8 +8,10 @@ import { supabase } from './services/supabaseClient';
 // --- Imports de Layout e Modais ---
 import MenuNavegacao from './components/layout/MenuNavegacao';
 import AdminLayout from './components/layout/AdminLayout';
+import BarberLayout from './components/layout/BarberLayout';
 import LoginModal from './components/modals/LoginModal';
 import SuperAdminRoute from './components/layout/SuperAdminRoute';
+import TenantProtectedRoute from './components/layout/TenantProtectedRoute';
 
 // --- Imports das Páginas do Cliente/Marketplace ---
 import HomeMarketplace from './pages/client/HomeMarketplace';
@@ -18,6 +21,7 @@ import AreaCliente from './pages/client/AreaCliente';
 
 // --- Imports das Páginas do Barbeiro ---
 import AgendaBarbeiro from './pages/barber/AgendaBarbeiro';
+import BarberPerfil from './pages/barber/BarberPerfil';
 import CadastroBarbearia from './pages/barber/CadastroBarbearia';
 
 // --- Imports das Páginas de Admin ---
@@ -33,19 +37,14 @@ import AdminPermissoes from './pages/admin/AdminPermissoes';
 import AdminPagamentos from './pages/admin/AdminPagamentos';
 import AdminFidelidade from './pages/admin/AdminFidelidade';
 import AdminUsuarios from './pages/admin/AdminUsuarios';
+import AdminIntegracoes from './pages/admin/AdminIntegracoes';
 import StripeCallback from './pages/admin/StripeCallback';
 
 // Componente para proteger rotas normais
 function ProtectedRoute({ children, allowedRoles }) {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, authReady } = useAuth();
 
-  if (loading) {
-    return (
-      <div className="flex h-screen w-screen items-center justify-center bg-background">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand border-t-transparent"></div>
-      </div>
-    );
-  }
+  if (!authReady) return null;
 
   if (!user) return <Navigate to="/" replace />;
   if (allowedRoles && !allowedRoles.includes(profile?.role)) return <Navigate to="/" replace />;
@@ -90,14 +89,19 @@ function AppContent() {
             <Route path="/cadastro-barbearia" element={<CadastroBarbearia />} />
             <Route path="/master" element={<SuperAdminRoute><DashboardMaster /></SuperAdminRoute>} />
 
-            <Route path="/area-cliente" element={<ProtectedRoute allowedRoles={['cliente', 'admin', 'gerente', 'funcionario']}><AreaCliente /></ProtectedRoute>}/>
+            <Route path="/area-cliente" element={<ProtectedRoute allowedRoles={['cliente', 'admin', 'gerente', 'funcionario', 'super_admin']}><AreaCliente /></ProtectedRoute>}/>
 
             <Route path="/:slug" element={<HomeCliente onOpenLogin={openLogin} />} />
             <Route path="/:slug/agendar" element={<AgendamentoCliente onOpenLogin={openLogin} />} />
 
-            <Route path="/:slug/barbeiro" element={<ProtectedRoute allowedRoles={['funcionario', 'gerente', 'admin']}><AgendaBarbeiro /></ProtectedRoute>} />
+            <Route path="/:slug/barbeiro" element={<TenantProtectedRoute allowedRoles={['funcionario', 'gerente', 'admin']}><BarberLayout /></TenantProtectedRoute>}>
+              <Route index element={<AgendaBarbeiro />} />
+              <Route path="clientes" element={<AdminUsuarios />} />
+              <Route path="perfil" element={<BarberPerfil />} />
+              <Route path="integracoes" element={<AdminIntegracoes />} />
+            </Route>
 
-            <Route path="/:slug/admin" element={<ProtectedRoute allowedRoles={['admin', 'gerente']}><AdminLayout /></ProtectedRoute>}>
+            <Route path="/:slug/admin" element={<TenantProtectedRoute allowedRoles={['admin', 'gerente']}><AdminLayout /></TenantProtectedRoute>}>
               <Route index element={<DashboardAdmin />} />
               <Route path="equipe" element={<AdminEquipe />} />
               <Route path="usuarios" element={<AdminUsuarios />} />
@@ -109,6 +113,7 @@ function AppContent() {
               <Route path="empresa" element={<AdminEmpresa />} />
               <Route path="financeiro" element={<AdminFinanceiro />} />
               <Route path="permissoes" element={<AdminPermissoes />} />
+              <Route path="integracoes" element={<AdminIntegracoes />} />
               <Route path="fidelidade" element={<AdminFidelidade />} />
             </Route>
 
@@ -117,6 +122,17 @@ function AppContent() {
       </main>
 
       <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} initialMode={loginModalMode} />
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          duration: 4000,
+          style: {
+            background: 'var(--surface)',
+            color: 'var(--text-base)',
+            border: '1px solid var(--border-line)',
+          },
+        }}
+      />
         
     </>
   );

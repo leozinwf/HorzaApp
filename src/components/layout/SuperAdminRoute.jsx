@@ -1,19 +1,17 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
+const SUPER_ADMIN_EMAIL = 'admin@barbearia.com';
+
+export const isSuperAdminUser = (user, profile) =>
+  profile?.role === 'super_admin' || user?.email === SUPER_ADMIN_EMAIL;
+
 export default function SuperAdminRoute({ children }) {
-  const { user, loading } = useAuth();
+  const { user, profile, authReady } = useAuth();
 
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-background">
-        <div className="animate-spin h-8 w-8 border-4 border-brand border-t-transparent rounded-full"></div>
-      </div>
-    );
-  }
+  if (!authReady) return null;
 
-  // Verifica se o usuário existe e se o email é EXATAMENTE o seu
-  if (!user || user.email !== 'admin@barbearia.com') {
+  if (!isSuperAdminUser(user, profile)) {
     return <Navigate replace to="/"/>;
   }
 

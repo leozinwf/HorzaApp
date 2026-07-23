@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
 import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
 
 export default function StripeCallback() {
+  const { slug } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const pagamentosPath = slug ? `/${slug}/admin/pagamentos` : '/';
   const [status, setStatus] = useState('processando'); // processando, sucesso, erro
 
   useEffect(() => {
@@ -33,7 +35,7 @@ export default function StripeCallback() {
       
       // Espera 3 segundos para o utilizador ler a mensagem de sucesso e volta para a página de pagamentos
       setTimeout(() => {
-        navigate('/admin/pagamentos');
+        navigate(pagamentosPath);
       }, 3000);
 
     } catch (error) {
@@ -72,7 +74,7 @@ export default function StripeCallback() {
             <h2 className="text-xl font-black text-red-600">Ops! Algo correu mal.</h2>
             <p className="text-sm text-text-muted">Não foi possível concluir a ligação com a Stripe. O código pode ter expirado.</p>
             <button 
-              onClick={() => navigate('/admin/pagamentos')}
+              onClick={() => navigate(pagamentosPath)}
               className="mt-4 bg-brand text-white px-6 py-2 rounded-xl font-bold hover:brightness-90"
             >
               Voltar e Tentar Novamente

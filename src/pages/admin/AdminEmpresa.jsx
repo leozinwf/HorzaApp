@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useModal } from '../../context/ModalContext'; // ✨ Importando o novo Hook
 import { supabase } from '../../services/supabaseClient';
-import { Building2, Save, MapPin, DollarSign, CreditCard, Zap, Clock, FileText, Phone, AtSign } from 'lucide-react';
+import { uploadImagemBarbearia } from '../../utils/uploadBarbearia';
+import { Building2, Save, MapPin, Clock, FileText, Phone, AtSign, Image } from 'lucide-react';
 
 export default function AdminEmpresa() {
     const { profile } = useAuth();
@@ -33,6 +34,10 @@ export default function AdminEmpresa() {
     const [horaAbertura, setHoraAbertura] = useState('09:00');
     const [horaFechamento, setHoraFechamento] = useState('19:00');
     const [diasFuncionamento, setDiasFuncionamento] = useState([1, 2, 3, 4, 5, 6]);
+    const [logoUrl, setLogoUrl] = useState('');
+    const [capaUrl, setCapaUrl] = useState('');
+    const [enviandoLogo, setEnviandoLogo] = useState(false);
+    const [enviandoCapa, setEnviandoCapa] = useState(false);
 
     const DIAS_SEMANA = [
         { id: 0, label: 'Dom' }, { id: 1, label: 'Seg' }, { id: 2, label: 'Ter' },
@@ -67,6 +72,8 @@ export default function AdminEmpresa() {
                 if (data.hora_abertura) setHoraAbertura(data.hora_abertura.substring(0, 5));
                 if (data.hora_fechamento) setHoraFechamento(data.hora_fechamento.substring(0, 5));
                 if (data.dias_funcionamento) setDiasFuncionamento(data.dias_funcionamento);
+                if (data.logo_url) setLogoUrl(data.logo_url);
+                if (data.capa_url) setCapaUrl(data.capa_url);
             }
         } catch (err) {
             console.error(err.message);
@@ -99,6 +106,36 @@ export default function AdminEmpresa() {
         setDiasFuncionamento(prev => prev.includes(idDia) ? prev.filter(d => d !== idDia) : [...prev, idDia]);
     };
 
+    const handleUploadLogo = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setEnviandoLogo(true);
+        try {
+            const url = await uploadImagemBarbearia(profile.barbearia_id, file, 'logo');
+            setLogoUrl(url);
+            showAlert('Foto enviada', 'Clique em Guardar para publicar na listagem do app.', 'success');
+        } catch {
+            showAlert('Upload indisponível', 'Use o campo de URL ou configure o bucket "barbearias" no Supabase Storage.', 'error');
+        } finally {
+            setEnviandoLogo(false);
+        }
+    };
+
+    const handleUploadCapa = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setEnviandoCapa(true);
+        try {
+            const url = await uploadImagemBarbearia(profile.barbearia_id, file, 'capa');
+            setCapaUrl(url);
+            showAlert('Capa enviada', 'Clique em Guardar para publicar na página da barbearia.', 'success');
+        } catch {
+            showAlert('Upload indisponível', 'Use o campo de URL ou configure o bucket "barbearias" no Supabase Storage.', 'error');
+        } finally {
+            setEnviandoCapa(false);
+        }
+    };
+
     const handleAtualizarEmpresa = async (e) => {
         e.preventDefault();
         setSaving(true);
@@ -106,7 +143,9 @@ export default function AdminEmpresa() {
             const { error } = await supabase.from('barbearias').update({
                 nome, razao_social: razaoSocial, cnpj, telefone, cep, rua, numero, bairro, cidade, estado,
                 chave_pix: chavePix, gateway_pagamento: gateway, redes_sociais: { instagram },
-                hora_abertura: `${horaAbertura}:00`, hora_fechamento: `${horaFechamento}:00`, dias_funcionamento: diasFuncionamento
+                hora_abertura: `${horaAbertura}:00`, hora_fechamento: `${horaFechamento}:00`, dias_funcionamento: diasFuncionamento,
+                logo_url: logoUrl || null,
+                capa_url: capaUrl || null
             }).eq('id', profile.barbearia_id);
 
             if (error) throw error;
@@ -156,6 +195,54 @@ export default function AdminEmpresa() {
                         <div>
                             <label className="block text-xs font-bold text-text-muted uppercase mb-1 flex items-center gap-1"><AtSign size={14} /> Instagram</label>
                             <input value={instagram} onChange={(e) => setInstagram(e.target.value)} className="w-full rounded-xl bg-background border border-border-line p-3 text-sm focus:border-brand outline-none" placeholder="@suabarbearia" />
+                        </div>
+                    </div>
+                </div>
+
+                {/* FOTO NA LISTAGEM DO APP */}
+                <div className="bg-surface p-6 md:p-8 rounded-2xl border border-border-line shadow-sm space-y-5">
+                    <h3 className="font-bold text-lg mb-2 flex items-center gap-2"><Image size={20} className="text-brand" /> Foto da Barbearia (Listagem)</h3>
+                    <p className="text-sm text-text-muted mb-4">Miniatura exibida na home do Horza App. Recomendado: quadrado ou 4:3.</p>
+
+                    <div className="flex flex-col sm:flex-row gap-6 items-start">
+                        <div className="w-32 h-32 rounded-2xl border border-border-line overflow-hidden bg-background shrink-0">
+                            {logoUrl ? (
+                                <img src={logoUrl} alt="Preview" className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-text-muted text-xs font-bold text-center p-2">Sem foto</div>
+                            )}
+                        </div>
+                        <div className="flex-1 space-y-3 w-full">
+                            <label className="block text-xs font-bold text-text-muted uppercase">URL da imagem</label>
+                            <input value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} placeholder="https://..." className="w-full rounded-xl bg-background border border-border-line p-3 text-sm focus:border-brand outline-none" />
+                            <label className="inline-flex items-center gap-2 bg-background border border-border-line px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer hover:border-brand">
+                                <Image size={16} /> {enviandoLogo ? 'Enviando...' : 'Enviar arquivo'}
+                                <input type="file" accept="image/*" className="hidden" onChange={handleUploadLogo} disabled={enviandoLogo} />
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                {/* CAPA DA PÁGINA DA BARBEARIA */}
+                <div className="bg-surface p-6 md:p-8 rounded-2xl border border-border-line shadow-sm space-y-5">
+                    <h3 className="font-bold text-lg mb-2 flex items-center gap-2"><Image size={20} className="text-brand" /> Imagem de Capa (Banner)</h3>
+                    <p className="text-sm text-text-muted mb-4">Banner no topo da página da barbearia. Recomendado: horizontal (16:9 ou 3:1).</p>
+
+                    <div className="flex flex-col gap-4">
+                        <div className="w-full h-36 md:h-44 rounded-2xl border border-border-line overflow-hidden bg-background">
+                            {capaUrl ? (
+                                <img src={capaUrl} alt="Capa" className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-text-muted text-xs font-bold">Sem capa</div>
+                            )}
+                        </div>
+                        <div className="space-y-3">
+                            <label className="block text-xs font-bold text-text-muted uppercase">URL da capa</label>
+                            <input value={capaUrl} onChange={(e) => setCapaUrl(e.target.value)} placeholder="https://..." className="w-full rounded-xl bg-background border border-border-line p-3 text-sm focus:border-brand outline-none" />
+                            <label className="inline-flex items-center gap-2 bg-background border border-border-line px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer hover:border-brand">
+                                <Image size={16} /> {enviandoCapa ? 'Enviando...' : 'Enviar capa'}
+                                <input type="file" accept="image/*" className="hidden" onChange={handleUploadCapa} disabled={enviandoCapa} />
+                            </label>
                         </div>
                     </div>
                 </div>

@@ -3,21 +3,37 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { supabase } from '../../services/supabaseClient';
-import { 
-  Scissors, User, Clock, MapPin, LogOut, Star, CalendarDays, 
-  ChevronRight, Sparkles, Sun, BookOpen, PartyPopper, Heart, Tag, Gift, Search, Video, AtSign, Image as ImageIcon 
+import MapaLocalizacao from '../../components/shared/MapaLocalizacao';
+import { canManageBarbeariaSlug, canAccessBarbeariaAdmin } from '../../constants/roles';
+import {
+  Scissors, User, Clock, MapPin, LogOut, Star, CalendarDays,
+  ChevronRight, Sparkles, AtSign, Phone, LayoutDashboard
 } from 'lucide-react';
+
+const cacheKey = (slug) => `barbearia_home_${slug}`;
 
 export default function HomeCliente({ onOpenLogin }) {
   const { user, profile, logout } = useAuth();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const { slug } = useParams();
-  
+
   const [meusAgendamentos, setMeusAgendamentos] = useState([]);
-  const [loadingAgendamentos, setLoadingAgendamentos] = useState(false);
-  const [barbeariaInfo, setBarbeariaInfo] = useState(null);
-  const [loadingBarbearia, setLoadingBarbearia] = useState(true);
+  const [barbeariaInfo, setBarbeariaInfo] = useState(() => {
+    if (!slug) return null;
+    try {
+      const cached = sessionStorage.getItem(cacheKey(slug));
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [carregandoBarbearia, setCarregandoBarbearia] = useState(!barbeariaInfo && !!slug);
+
+  const isAdminDestaBarbearia =
+    barbeariaInfo &&
+    canAccessBarbeariaAdmin(user, profile) &&
+    canManageBarbeariaSlug(user, profile, barbeariaInfo.id);
 
   const getIniciais = () => {
     const nome = profile?.nome || user?.user_metadata?.nome;
@@ -27,221 +43,233 @@ export default function HomeCliente({ onOpenLogin }) {
 
   useEffect(() => {
     if (slug) buscarInfoBarbearia();
-    else setLoadingBarbearia(false);
-    
     if (user) buscarAgendamentosCliente();
   }, [user, slug]);
 
   const buscarInfoBarbearia = async () => {
+    if (!barbeariaInfo) setCarregandoBarbearia(true);
     try {
-      // 1. Tenta buscar com a nova coluna 'widgets'
       let { data, error } = await supabase
         .from('barbearias')
-        .select('id, nome, slug, rua, numero, bairro, cidade, estado, hora_abertura, hora_fechamento, dias_funcionamento, widgets')
+        .select('id, nome, slug, rua, numero, bairro, cidade, estado, cep, telefone, hora_abertura, hora_fechamento, dias_funcionamento, latitude, longitude, widgets, redes_sociais, logo_url, capa_url, cor_primaria')
         .eq('slug', slug)
         .maybeSingle();
 
-      // 2. Se o erro for de coluna inexistente (42703), faz uma busca de segurança sem ela
       if (error && error.code === '42703') {
-        console.warn('Coluna widgets não encontrada, buscando dados básicos...');
-        
         const fallback = await supabase
           .from('barbearias')
-          .select('id, nome, slug, rua, numero, bairro, cidade, estado, hora_abertura, hora_fechamento, dias_funcionamento')
+          .select('id, nome, slug, rua, numero, bairro, cidade, estado, cep, telefone, hora_abertura, hora_fechamento, dias_funcionamento, latitude, longitude, logo_url, capa_url')
           .eq('slug', slug)
           .maybeSingle();
-          
         data = fallback.data;
-        error = fallback.error;
       }
 
-      if (error) throw error;
-      if (data) setBarbeariaInfo(data);
+      if (data) {
+        setBarbeariaInfo(data);
+        sessionStorage.setItem(cacheKey(slug), JSON.stringify(data));
+      }
     } catch (err) {
       console.error('Erro ao buscar barbearia:', err);
     } finally {
-      setLoadingBarbearia(false);
+      setCarregandoBarbearia(false);
     }
   };
 
   const buscarAgendamentosCliente = async () => {
-    setLoadingAgendamentos(true);
     try {
       const { data } = await supabase
         .from('agendamentos')
         .select(`id, data_hora, status_atendimento, servicos (nome_servico, preco), barbeiros:usuarios!agendamentos_barbeiro_id_fkey (nome)`)
         .eq('cliente_id', user.id)
         .order('data_hora', { ascending: false })
-        .limit(2);
+        .limit(3);
       if (data) setMeusAgendamentos(data);
-    } catch (err) { console.error(err); } finally { setLoadingAgendamentos(false); }
-  };
-
-  const handleLogout = async () => {
-    await logout();
-    navigate('/');
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const formatarDiasFuncionamento = (diasArray) => {
-    if (!diasArray || diasArray.length === 0) return 'Dias não informados';
+    if (!diasArray?.length) return 'Dias não informados';
     if (diasArray.length === 7) return 'Todos os dias';
-    if (diasArray.length === 6 && diasArray.includes(1) && diasArray.includes(6)) return 'Segunda a Sábado';
-    if (diasArray.length === 5 && diasArray.includes(1) && !diasArray.includes(6) && !diasArray.includes(0)) return 'Segunda a Sexta';
-    const nomes = { 0: 'Dom', 1: 'Seg', 2: 'Ter', 3: 'Qua', 4: 'Qui', 5: 'Sex', 6: 'Sáb', 7: 'Dom' };
-    return diasArray.map(d => nomes[d]).filter(Boolean).join(', ');
+    const nomes = { 0: 'Dom', 1: 'Seg', 2: 'Ter', 3: 'Qua', 4: 'Qui', 5: 'Sex', 6: 'Sáb' };
+    return diasArray.map((d) => nomes[d]).filter(Boolean).join(', ');
   };
 
-  if (loadingBarbearia) return <div className="flex h-screen items-center justify-center bg-background"><div className="animate-spin h-8 w-8 border-4 border-brand border-t-transparent rounded-full"></div></div>;
+  if (carregandoBarbearia && !barbeariaInfo) {
+    return (
+      <div className="min-h-screen bg-background p-6 space-y-4 animate-pulse max-w-5xl mx-auto">
+        <div className="h-48 bg-surface rounded-3xl border border-border-line" />
+        <div className="h-24 bg-surface rounded-3xl border border-border-line" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col text-text-base bg-background min-h-screen pb-24">
-      {/* HEADER */}
-      <div className="bg-surface border-b border-border-line px-6 pt-10 pb-8 rounded-b-[2.5rem] shadow-xs md:rounded-3xl md:max-w-5xl md:mx-auto md:w-full md:mt-6 md:border">
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <span className="text-text-muted text-xs font-bold uppercase tracking-wider block mb-1">Bem-vindo {barbeariaInfo ? 'à' : 'ao'}</span>
-            <h1 className="text-3xl font-black text-brand flex items-center gap-2">
-              <Scissors size={28} className="animate-pulse" /> {barbeariaInfo ? barbeariaInfo.nome : 'Horza App'}
-            </h1>
-          </div>
-          <div className="h-14 w-14 rounded-full bg-brand/10 border-2 border-brand flex items-center justify-center text-brand font-bold shadow-xs">
-            {user ? getIniciais() : <User size={24} />}
-          </div>
-        </div>
-
-        {user ? (
-          <div className="grid grid-cols-3 gap-3">
-            <Link to="/area-cliente?tab=fidelidade" className="bg-background border border-border-line p-3 rounded-2xl flex flex-col items-center justify-center gap-1 hover:border-brand transition-colors group">
-              <Star size={20} className="text-amber-500 group-hover:scale-110 transition-transform" />
-              <span className="text-[10px] font-black uppercase text-text-muted mt-1">Pontos</span>
-              <span className="text-xs font-bold text-text-base">{profile?.saldo_pontos || 0}</span>
-            </Link>
-            <Link to="/area-cliente?tab=agendamentos" className="bg-background border border-border-line p-3 rounded-2xl flex flex-col items-center justify-center gap-1 hover:border-brand transition-colors group">
-              <Clock size={20} className="text-blue-500 group-hover:scale-110 transition-transform" />
-              <span className="text-[10px] font-black uppercase text-text-muted mt-1">Histórico</span>
-              <span className="text-xs font-bold text-text-base">Ver Tudo</span>
-            </Link>
-            <Link to="/area-cliente?tab=perfil" className="bg-background border border-border-line p-3 rounded-2xl flex flex-col items-center justify-center gap-1 hover:border-brand transition-colors group">
-              <User size={20} className="text-brand group-hover:scale-110 transition-transform" />
-              <span className="text-[10px] font-black uppercase text-text-muted mt-1">Sua Conta</span>
-              <span className="text-xs font-bold text-text-base">Perfil</span>
-            </Link>
+      {/* HERO com foto */}
+      <div className="relative overflow-hidden">
+        {(barbeariaInfo?.capa_url || barbeariaInfo?.logo_url) ? (
+          <div className="absolute inset-0">
+            <img src={barbeariaInfo.capa_url || barbeariaInfo.logo_url} alt="" className="w-full h-full object-cover opacity-40 blur-[1px] scale-105" />
+            <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-background/80 to-background" />
           </div>
         ) : (
-          <div className="bg-brand text-white p-5 rounded-2xl flex items-center justify-between shadow-md">
-            <div><p className="font-bold text-base">Faça parte do clube!</p><p className="text-xs opacity-90 mt-0.5">Acumule pontos e ganhe prêmios.</p></div>
-            <button onClick={onOpenLogin} className="bg-white text-brand text-xs font-black px-6 py-3 rounded-xl shadow-xs hover:bg-opacity-90 transition-all cursor-pointer">Entrar</button>
-          </div>
+          <div className="absolute inset-0 bg-gradient-to-br from-brand/20 via-amber-500/10 to-background" />
         )}
-      </div>
 
-      <div className="w-full max-w-5xl mx-auto px-5 mt-6 space-y-8">
-        
-        {/* BOTÃO AGENDAR */}
-        {barbeariaInfo && slug ? (
-          <div className="bg-gradient-to-r from-brand to-amber-600 p-0.5 rounded-[2rem] shadow-lg">
-            <Link to={`/${slug}/agendar`} className="block bg-surface p-8 rounded-[30px] relative overflow-hidden group hover:brightness-95 transition-all">
-              <div className="relative z-10 flex flex-col justify-between h-full md:flex-row md:items-center">
-                <div>
-                  <span className="bg-brand text-white text-[10px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest mb-3 inline-block shadow-xs">Ação Rápida</span>
-                  <h2 className="text-3xl font-black text-text-base group-hover:text-brand transition-colors mb-2">Agendar Horário</h2>
-                  <p className="text-sm font-medium text-text-muted max-w-xs md:max-w-md">Escolha o serviço, seu profissional favorito e garanta sua vaga.</p>
-                </div>
-                <div className="mt-6 md:mt-0 flex items-center gap-2 bg-background/50 backdrop-blur-sm border border-border-line px-5 py-3 rounded-2xl text-sm font-black text-brand uppercase tracking-wider w-fit">
-                  Começar <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
-                </div>
+        <div className="relative px-6 pt-10 pb-10 md:pt-14 max-w-5xl mx-auto w-full">
+          <div className="flex justify-between items-start gap-4 mb-6">
+            <div className="flex items-start gap-4">
+              {barbeariaInfo?.logo_url ? (
+                <img src={barbeariaInfo.logo_url} alt={barbeariaInfo.nome} className="h-20 w-20 rounded-2xl object-cover border-2 border-white shadow-lg shrink-0" />
+              ) : (
+                <span className="h-16 w-16 rounded-2xl bg-brand text-white flex items-center justify-center shadow-lg shrink-0">
+                  <Scissors size={28} />
+                </span>
+              )}
+              <div>
+                <span className="text-text-muted text-xs font-bold uppercase tracking-widest">Barbearia parceira</span>
+                <h1 className="text-3xl md:text-4xl font-black text-text-base mt-1">{barbeariaInfo?.nome}</h1>
+                {barbeariaInfo?.telefone && (
+                  <p className="text-sm text-text-muted mt-2 flex items-center gap-1.5">
+                    <Phone size={14} /> {barbeariaInfo.telefone}
+                  </p>
+                )}
               </div>
-            </Link>
-          </div>
-        ) : (
-          <div className="bg-surface border border-dashed border-border-line p-8 rounded-[30px] text-center">
-            <div className="h-16 w-16 bg-brand/10 text-brand rounded-full flex items-center justify-center mx-auto mb-4"><Search size={32} /></div>
-            <h2 className="text-2xl font-black text-text-base mb-2">Pesquise sua barbearia</h2>
-          </div>
-        )}
-
-        {/* ✨ SESSÃO DE WIDGETS (CONFIGURADA PELO ADMIN) ✨ */}
-        {barbeariaInfo?.widgets && barbeariaInfo.widgets.length > 0 && (
-          <div className="space-y-4">
-            <h3 className="text-xs font-black text-text-muted uppercase tracking-widest flex items-center gap-2">
-              <Sparkles size={16} className="text-brand" /> Novidades & Avisos
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {barbeariaInfo.widgets.map((widget, idx) => (
-                <div key={idx} className="bg-surface border border-border-line rounded-3xl overflow-hidden shadow-sm">
-                  {widget.type === 'imagem' && (
-                    <img src={widget.content} alt="Aviso" className="w-full h-48 object-cover" />
-                  )}
-                  {widget.type === 'texto' && (
-                    <div className="p-6">
-                      <p className="text-sm font-medium text-text-base leading-relaxed" dangerouslySetInnerHTML={{__html: widget.content}}></p>
-                    </div>
-                  )}
-                  {widget.type === 'video' && (
-                    <div className="aspect-video w-full">
-                      <iframe src={widget.content} className="w-full h-full" frameBorder="0" allowFullScreen></iframe>
-                    </div>
-                  )}
-                  {widget.type === 'social' && (
-                    <a href={widget.content} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-6 hover:bg-brand/5 transition-colors">
-                      {widget.content.includes('instagram') ? <AtSign className="text-pink-500" /> : <Facebook className="text-blue-500" />}
-                      <span className="font-bold text-sm text-text-base">Siga-nos nas Redes Sociais</span>
-                    </a>
-                  )}
-                </div>
-              ))}
+            </div>
+            <div className="h-12 w-12 rounded-xl bg-surface border border-border-line flex items-center justify-center text-brand font-black">
+              {user ? getIniciais() : <User size={22} />}
             </div>
           </div>
+
+          {isAdminDestaBarbearia && (
+            <Link
+              to={`/${slug}/admin`}
+              className="inline-flex items-center gap-2 mb-6 bg-brand text-white px-5 py-3 rounded-xl text-sm font-black shadow-md hover:brightness-110"
+            >
+              <LayoutDashboard size={18} /> Acessar Painel Admin
+            </Link>
+          )}
+
+          {user ? (
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { to: '/area-cliente?tab=fidelidade', icon: Star, label: 'Pontos', value: profile?.saldo_pontos || 0 },
+                { to: '/area-cliente?tab=agendamentos', icon: Clock, label: 'Histórico', value: 'Ver' },
+                { to: '/area-cliente?tab=perfil', icon: User, label: 'Conta', value: 'Perfil' },
+              ].map((item) => (
+                <Link key={item.to} to={item.to} className="bg-surface/90 backdrop-blur border border-border-line p-3 rounded-2xl flex flex-col items-center gap-1 hover:border-brand">
+                  <item.icon size={18} className="text-brand" />
+                  <span className="text-[10px] font-black uppercase text-text-muted">{item.label}</span>
+                  <span className="text-xs font-bold">{item.value}</span>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-brand text-white p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg">
+              <div>
+                <p className="font-black text-lg">Entre e acumule pontos</p>
+                <p className="text-sm opacity-90">Prêmios exclusivos para clientes fiéis.</p>
+              </div>
+              <button onClick={onOpenLogin} className="bg-white text-brand px-6 py-3 rounded-xl text-sm font-black cursor-pointer">
+                Entrar / Cadastrar
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="w-full max-w-5xl mx-auto px-5 space-y-8">
+        {barbeariaInfo && slug && (
+          <Link
+            to={`/${slug}/agendar`}
+            className="block bg-gradient-to-r from-brand to-amber-500 p-6 md:p-8 rounded-[2rem] text-white shadow-xl hover:brightness-105 transition-all group"
+          >
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-widest opacity-80">Agendamento online</span>
+                <h2 className="text-2xl md:text-3xl font-black mt-1">Reserve seu horário</h2>
+              </div>
+              <div className="flex items-center gap-2 bg-white/20 px-5 py-3 rounded-2xl font-black text-sm w-fit">
+                Agendar <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
+              </div>
+            </div>
+          </Link>
         )}
 
-        {/* RESTANTE DA PÁGINA */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="space-y-8">
-            <div className="space-y-4">
-              <h3 className="text-xs font-black text-text-muted uppercase tracking-widest flex items-center gap-2"><Clock size={16} className="text-brand" /> Próximos Atendimentos</h3>
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          <div className="lg:col-span-3 space-y-6">
+            {barbeariaInfo && (
+              <div className="bg-surface border border-border-line rounded-3xl p-6 shadow-sm">
+                <h3 className="text-xs font-black text-text-muted uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <Clock size={16} className="text-brand" /> Horário
+                </h3>
+                <p className="font-bold">{formatarDiasFuncionamento(barbeariaInfo.dias_funcionamento)}</p>
+                <p className="text-sm text-text-muted mt-1">
+                  Das {barbeariaInfo.hora_abertura?.substring(0, 5) || '09:00'} às {barbeariaInfo.hora_fechamento?.substring(0, 5) || '19:00'}
+                </p>
+              </div>
+            )}
+
+            <div className="bg-surface border border-border-line rounded-3xl p-6 shadow-sm">
+              <h3 className="text-xs font-black text-text-muted uppercase tracking-widest mb-4 flex items-center gap-2">
+                <CalendarDays size={16} className="text-brand" /> Próximos atendimentos
+              </h3>
               {!user ? (
-                <div className="bg-surface border border-dashed border-border-line p-6 rounded-2xl text-center shadow-xs"><p className="text-sm font-bold text-text-muted">Faça login para ver sua agenda.</p></div>
+                <p className="text-sm text-text-muted">Faça login para ver sua agenda.</p>
               ) : meusAgendamentos.length === 0 ? (
-                <div className="bg-surface border border-dashed border-border-line p-8 rounded-2xl text-center"><p className="text-sm font-bold text-text-muted">Nenhum agendamento pendente.</p></div>
+                <p className="text-sm text-text-muted">Nenhum agendamento pendente.</p>
               ) : (
                 <div className="space-y-3">
                   {meusAgendamentos.map((ag) => (
-                    <div key={ag.id} className="bg-surface border border-border-line p-4 rounded-2xl shadow-xs flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="h-12 w-12 bg-background border border-border-line rounded-xl flex flex-col items-center justify-center text-center font-black">
-                          <span className="text-[10px] text-text-muted uppercase leading-none">{new Date(ag.data_hora).toLocaleDateString('pt-BR').split('/')[1]}</span>
-                          <span className="text-base text-text-base leading-none mt-0.5">{new Date(ag.data_hora).toLocaleDateString('pt-BR').split('/')[0]}</span>
-                        </div>
-                        <div>
-                          <p className="font-extrabold text-sm text-text-base">{ag.servicos?.nome_servico}</p>
-                          <p className="text-xs text-text-muted mt-0.5">Com {ag.barbeiros?.nome.split(' ')[0]} às {new Date(ag.data_hora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
-                        </div>
+                    <div key={ag.id} className="flex items-center gap-4 p-4 bg-background rounded-2xl border border-border-line">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold truncate">{ag.servicos?.nome_servico}</p>
+                        <p className="text-xs text-text-muted">
+                          {new Date(ag.data_hora).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        </p>
                       </div>
-                      <span className="bg-brand/10 text-brand text-[9px] font-black uppercase px-2 py-1 rounded-md">{ag.status_atendimento}</span>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
+            {barbeariaInfo?.widgets?.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="text-xs font-black text-text-muted uppercase tracking-widest flex items-center gap-2">
+                  <Sparkles size={16} className="text-brand" /> Novidades
+                </h3>
+                {barbeariaInfo.widgets.map((widget, idx) => (
+                  <div key={idx} className="bg-surface border border-border-line rounded-2xl p-5 text-sm">
+                    {widget.type === 'texto' && <div dangerouslySetInnerHTML={{ __html: widget.content }} />}
+                    {widget.type === 'social' && (
+                      <a href={widget.content} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 font-bold">
+                        <AtSign className="text-pink-500" /> Redes sociais
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="lg:col-span-2">
             {barbeariaInfo && (
-              <div className="space-y-4">
-                <h3 className="text-xs font-black text-text-muted uppercase tracking-widest flex items-center gap-2"><MapPin size={16} className="text-brand" /> Nossa Unidade</h3>
-                <div className="bg-surface p-5 rounded-2xl border border-border-line shadow-xs">
-                  <p className="text-sm font-extrabold">Endereço</p>
-                  <p className="text-xs text-text-muted mt-1">{barbeariaInfo.rua}, {barbeariaInfo.numero} - {barbeariaInfo.bairro}</p>
-                  <hr className="my-3 border-border-line" />
-                  <p className="text-sm font-extrabold">Horário</p>
-                  <p className="text-xs text-text-muted mt-1">{formatarDiasFuncionamento(barbeariaInfo.dias_funcionamento)} <br/> Das {barbeariaInfo.hora_abertura?.substring(0,5)} às {barbeariaInfo.hora_fechamento?.substring(0,5)}</p>
-                </div>
+              <div className="bg-surface border border-border-line rounded-3xl p-6 shadow-sm sticky top-24 space-y-4">
+                <h3 className="text-xs font-black text-text-muted uppercase tracking-widest flex items-center gap-2">
+                  <MapPin size={16} className="text-brand" /> Localização
+                </h3>
+                <MapaLocalizacao barbearia={barbeariaInfo} />
               </div>
             )}
           </div>
         </div>
 
         {user && isMobile && (
-          <button onClick={handleLogout} className="w-full bg-red-500/5 hover:bg-red-500/10 p-4 rounded-2xl border border-red-500/20 flex text-red-500 mt-8 font-bold justify-center gap-2">
-            <LogOut size={18} /> Sair da conta
+          <button onClick={() => logout().then(() => navigate('/'))} className="w-full bg-red-500/5 p-4 rounded-2xl border border-red-500/20 text-red-500 font-bold flex justify-center gap-2">
+            <LogOut size={18} /> Sair
           </button>
         )}
       </div>

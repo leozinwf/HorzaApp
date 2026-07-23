@@ -1,13 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { estoqueService } from '../../services/estoqueService';
+import { useAdminBarbeariaId } from '../../hooks/useAdminBarbeariaId';
 import { useModal } from '../../context/ModalContext';
-import { Box, Plus, Trash2, Edit2, X, Check, Package, AlertTriangle, DollarSign, Search, Tag } from 'lucide-react';
-import toast from 'react-hot-toast'; // 👈 Importando o Toast
-import CurrencyInput from 'react-currency-input-field'; // 👈 Importando a máscara de moeda
+import { Box, Plus, Trash2, Edit2, X, Check, Package, AlertTriangle, DollarSign, Search, Tag, Hash } from 'lucide-react';
+import toast from 'react-hot-toast';
+import CurrencyInput from 'react-currency-input-field';
+import { auditLogService } from '../../services/auditLogService';
+import HistoricoMudancas from '../../components/admin/HistoricoMudancas';
 
 export default function AdminEstoque() {
   const { profile } = useAuth();
+  const { barbeariaId, loading: loadingTenant } = useAdminBarbeariaId();
   const { showConfirm } = useModal(); // Removemos o showAlert daqui
 
   // Estados dos Dados
@@ -28,16 +32,20 @@ export default function AdminEstoque() {
   const [quantidadeAtual, setQuantidadeAtual] = useState('');
   const [quantidadeMinima, setQuantidadeMinima] = useState('5');
 
+  const [produtoAjuste, setProdutoAjuste] = useState(null);
+  const [qtdManual, setQtdManual] = useState('');
+  const [tipoManual, setTipoManual] = useState('entrada');
+
   useEffect(() => {
-    if (profile?.barbearia_id) {
+    if (barbeariaId) {
       buscarEstoque();
     }
-  }, [profile]);
+  }, [barbeariaId]);
 
   const buscarEstoque = async () => {
     setLoading(true);
     try {
-      const data = await estoqueService.obterProdutos(profile.barbearia_id);
+      const data = await estoqueService.obterProdutos(barbeariaId);
       setProdutos(data);
     } catch (err) {
       console.error('Erro ao buscar estoque:', err.message);
@@ -66,20 +74,27 @@ export default function AdminEstoque() {
 
     try {
       if (editingProduto) {
-        const { error } = await supabase
-          .from('produtos')
-          .update(payload)
-          .eq('id', editingProduto.id);
-
-        if (error) throw error;
-        showAlert('Sucesso', 'Produto atualizado com sucesso!');
+        await estoqueService.atualizarProduto(editingProduto.id, payload);
+        await auditLogService.registrar({
+          barbeariaId: barbeariaId,
+          usuarioId: profile.id,
+          usuarioNome: profile.nome,
+          modulo: 'estoque',
+          acao: 'editar',
+          descricao: `Produto "${nomeProduto}" atualizado`,
+        });
+        toast.success('Produto atualizado com sucesso!');
       } else {
-        const { error } = await supabase
-          .from('produtos')
-          .insert([{ ...payload, barbearia_id: profile.barbearia_id }]);
-
-        if (error) throw error;
-        showAlert('Sucesso', 'Novo produto adicionado ao estoque!');
+        await estoqueService.adicionarProduto({ ...payload, barbearia_id: barbeariaId });
+        await auditLogService.registrar({
+          barbeariaId,
+          usuarioId: profile.id,
+          usuarioNome: profile.nome,
+          modulo: 'estoque',
+          acao: 'criar',
+          descricao: `Produto "${nomeProduto}" adicionado`,
+        });
+        toast.success('Novo produto adicionado ao estoque!');
       }
 
       fecharFormulario();
@@ -91,7 +106,7 @@ export default function AdminEstoque() {
 
   // 🚀 Ajuste rápido com gravação na tabela de 'movimentacao_estoque'
   const handleAjustarQuantidade = async (produto, mudanca) => {
-    if (produto.quantidade_atual + mudanca < 0) return;
+    if (Number(produto.quantidade_atual) + mudanca < 0) return;
 
     try {
       const tipoMovimentacao = mudanca > 0 ? 'entrada' : 'saida';
@@ -105,11 +120,18 @@ export default function AdminEstoque() {
         'Ajuste rápido'
       );
 
-      // Atualiza o estado local rapidamente para uma UX instantânea
-      setProdutos(produtos.map(p => p.id === produto.id ? { ...p, quantidade_atual: novaQtd } : p));
+      setProdutos(prev => prev.map(p => p.id === produto.id ? { ...p, quantidade_atual: novaQtd } : p));
+      await auditLogService.registrar({
+        barbeariaId,
+        usuarioId: profile.id,
+        usuarioNome: profile.nome,
+        modulo: 'estoque',
+        acao: 'editar',
+        descricao: `Quantidade de "${produto.nome_produto}" ajustada (${mudanca > 0 ? '+' : ''}${mudanca})`,
+      });
       toast.success('Quantidade atualizada!', { position: 'bottom-right' });
     } catch (err) {
-      toast.error('Não foi possível alterar a quantidade.');
+      toast.error(err.message || 'Não foi possível alterar a quantidade.');
     }
   };
 
@@ -118,6 +140,14 @@ export default function AdminEstoque() {
     showConfirm('Excluir Produto', 'Tem certeza de que deseja remover este produto do estoque permanentemente?', async () => {
       try {
         await estoqueService.deletarProduto(id);
+        await auditLogService.registrar({
+          barbeariaId: barbeariaId,
+          usuarioId: profile.id,
+          usuarioNome: profile.nome,
+          modulo: 'estoque',
+          acao: 'excluir',
+          descricao: 'Produto removido do estoque',
+        });
         buscarEstoque();
         toast.success('Produto removido com sucesso.');
       } catch (err) {
@@ -135,6 +165,68 @@ export default function AdminEstoque() {
     setQuantidadeAtual(produto.quantidade_atual);
     setQuantidadeMinima(produto.quantidade_minima);
     setIsFormOpen(true);
+  };
+
+  const fecharAjusteManual = () => {
+    setProdutoAjuste(null);
+    setQtdManual('');
+    setTipoManual('entrada');
+  };
+
+  const confirmarAjusteManual = () => {
+    if (!produtoAjuste) return;
+
+    const qtd = parseInt(qtdManual, 10);
+    if (!Number.isFinite(qtd) || qtd <= 0) {
+      toast.error('Informe uma quantidade válida maior que zero.');
+      return;
+    }
+
+    const mudanca = tipoManual === 'entrada' ? qtd : -qtd;
+    const novaPrevista = Number(produtoAjuste.quantidade_atual) + mudanca;
+
+    if (novaPrevista < 0) {
+      toast.error('A quantidade final não pode ser negativa.');
+      return;
+    }
+
+    const acao = tipoManual === 'entrada' ? 'adicionar' : 'remover';
+    showConfirm(
+      `${tipoManual === 'entrada' ? 'Adicionar' : 'Remover'} estoque`,
+      `Confirma ${acao} ${qtd} unidade(s) de "${produtoAjuste.nome_produto}"? ${
+        tipoManual === 'entrada' ? 'Entrada' : 'Saída'
+      }: ${produtoAjuste.quantidade_atual} → ${novaPrevista}`,
+      async () => {
+        try {
+          const novaQtd = await estoqueService.registrarMovimentacao(
+            produtoAjuste.id,
+            profile.id,
+            tipoManual,
+            produtoAjuste.quantidade_atual,
+            mudanca,
+            `Ajuste manual (${acao} ${qtd})`
+          );
+
+          setProdutos((prev) =>
+            prev.map((p) => (p.id === produtoAjuste.id ? { ...p, quantidade_atual: novaQtd } : p))
+          );
+
+          await auditLogService.registrar({
+            barbeariaId,
+            usuarioId: profile.id,
+            usuarioNome: profile.nome,
+            modulo: 'estoque',
+            acao: 'editar',
+            descricao: `Ajuste manual em "${produtoAjuste.nome_produto}" (${mudanca > 0 ? '+' : ''}${mudanca})`,
+          });
+
+          toast.success('Estoque atualizado com sucesso!');
+          fecharAjusteManual();
+        } catch (err) {
+          toast.error(err.message || 'Não foi possível ajustar o estoque.');
+        }
+      }
+    );
   };
 
   const fecharFormulario = () => {
@@ -298,7 +390,7 @@ export default function AdminEstoque() {
 
       {/* LISTAGEM PRINCIPAL */}
       <div className="bg-surface rounded-2xl border border-border-line shadow-sm overflow-hidden">
-        {loading ? (
+        {loading || loadingTenant ? (
           <p className="p-10 text-center text-text-muted text-sm">Carregando estoque...</p>
         ) : produtosFiltrados.length === 0 ? (
           <div className="p-12 text-center flex flex-col items-center justify-center">
@@ -353,12 +445,25 @@ export default function AdminEstoque() {
 
                       {/* Controle Rápido de Quantidade */}
                       <td className="p-4">
-                        <div className="flex items-center justify-center gap-3">
-                          <button onClick={() => handleAjustarQuantidade(prod, -1)} className="h-7 w-7 rounded-lg border border-border-line bg-surface hover:bg-background flex items-center justify-center font-black text-text-muted hover:text-text-base transition-colors cursor-pointer shadow-xs select-none">-</button>
-                          <span className={`font-black text-sm w-8 text-center ${estaBaixo ? 'text-red-500 text-base' : 'text-text-base'}`}>
-                            {prod.quantidade_atual}
-                          </span>
-                          <button onClick={() => handleAjustarQuantidade(prod, 1)} className="h-7 w-7 rounded-lg border border-border-line bg-surface hover:bg-background flex items-center justify-center font-black text-text-muted hover:text-text-base transition-colors cursor-pointer shadow-xs select-none">+</button>
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="flex items-center justify-center gap-2">
+                            <button type="button" onClick={() => handleAjustarQuantidade(prod, -1)} className="h-7 w-7 rounded-lg border border-border-line bg-surface hover:bg-background flex items-center justify-center font-black text-text-muted hover:text-text-base transition-colors cursor-pointer shadow-xs select-none">-</button>
+                            <span className={`font-black text-sm w-8 text-center ${estaBaixo ? 'text-red-500 text-base' : 'text-text-base'}`}>
+                              {prod.quantidade_atual}
+                            </span>
+                            <button type="button" onClick={() => handleAjustarQuantidade(prod, 1)} className="h-7 w-7 rounded-lg border border-border-line bg-surface hover:bg-background flex items-center justify-center font-black text-text-muted hover:text-text-base transition-colors cursor-pointer shadow-xs select-none">+</button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setProdutoAjuste(prod);
+                              setQtdManual('');
+                              setTipoManual('entrada');
+                            }}
+                            className="text-[10px] font-black uppercase tracking-wide text-brand hover:underline cursor-pointer flex items-center gap-1"
+                          >
+                            <Hash size={10} /> Ajustar quantidade
+                          </button>
                         </div>
                       </td>
 
@@ -378,6 +483,72 @@ export default function AdminEstoque() {
           </div>
         )}
       </div>
+
+      <div className="mt-8">
+        <HistoricoMudancas barbeariaId={barbeariaId} modulo="estoque" />
+      </div>
+
+      {produtoAjuste && (
+        <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-surface border border-border-line w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-black text-lg text-text-base">Ajuste manual de estoque</h3>
+                <p className="text-sm text-text-muted mt-1 truncate">{produtoAjuste.nome_produto}</p>
+                <p className="text-xs font-bold text-brand mt-2">Atual: {produtoAjuste.quantidade_atual} un.</p>
+              </div>
+              <button type="button" onClick={fecharAjusteManual} className="text-text-muted hover:text-text-base cursor-pointer">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex gap-2 bg-background p-1 rounded-xl border border-border-line">
+              {[
+                { id: 'entrada', label: 'Adicionar' },
+                { id: 'saida', label: 'Remover' },
+              ].map((op) => (
+                <button
+                  key={op.id}
+                  type="button"
+                  onClick={() => setTipoManual(op.id)}
+                  className={`flex-1 py-2.5 rounded-lg text-sm font-black transition-colors cursor-pointer ${
+                    tipoManual === op.id
+                      ? op.id === 'entrada'
+                        ? 'bg-green-500/15 text-success'
+                        : 'bg-red-500/15 text-danger'
+                      : 'text-text-muted hover:text-text-base'
+                  }`}
+                >
+                  {op.label}
+                </button>
+              ))}
+            </div>
+
+            <div>
+              <label className="block text-xs font-black text-text-muted uppercase mb-2">Quantidade</label>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={qtdManual}
+                onChange={(e) => setQtdManual(e.target.value)}
+                placeholder="Ex: 10"
+                className="w-full rounded-xl bg-input border border-border-line p-3 text-sm font-bold outline-none focus:border-brand"
+                autoFocus
+              />
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button type="button" onClick={fecharAjusteManual} className="flex-1 py-3 rounded-xl border border-border-line font-bold text-sm cursor-pointer hover:border-brand">
+                Cancelar
+              </button>
+              <button type="button" onClick={confirmarAjusteManual} className="flex-1 py-3 rounded-xl bg-brand text-white font-black text-sm cursor-pointer hover:brightness-110">
+                Confirmar ajuste
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { isSuperAdminUser } from './SuperAdminRoute';
+import { canAccessBarbeariaAdmin, canAccessBarbeiroPanel } from '../../constants/roles';
 import { supabase } from '../../services/supabaseClient';
 import { 
   Scissors, LogOut, LayoutDashboard, LogIn, 
@@ -61,33 +63,59 @@ export default function MenuNavegacao({ onOpenLogin }) {
     navigate('/');
   };
 
-  const isSuperAdmin = user?.email === 'admin@barbearia.com';
-  const isAdminOuGerente = profile?.role === 'admin' || profile?.role === 'gerente';
-  const isFuncionario = profile?.role === 'funcionario';
+  const isSuperAdmin = isSuperAdminUser(user, profile);
+  const podePainelBarbearia = canAccessBarbeariaAdmin(user, profile);
+  const podePainelBarbeiro = canAccessBarbeiroPanel(user, profile) && profile?.role !== 'super_admin';
+  const linkPerfil = '/area-cliente?tab=perfil';
 
   useEffect(() => {
     async function buscarSlugDaEmpresa() {
       if (profile?.barbearia_id) {
+        const cacheKey = `horza_slug_${profile.barbearia_id}`;
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) setSlugDaEmpresa(cached);
+
         const { data } = await supabase
           .from('barbearias')
           .select('slug')
           .eq('id', profile.barbearia_id)
           .single();
-          
+
         if (data?.slug) {
           setSlugDaEmpresa(data.slug);
+          localStorage.setItem(cacheKey, data.slug);
+        }
+        return;
+      }
+
+      if (isSuperAdmin) {
+        const cacheMaster = localStorage.getItem('horza_slug_master');
+        if (cacheMaster) setSlugDaEmpresa(cacheMaster);
+
+        const { data } = await supabase
+          .from('barbearias')
+          .select('slug')
+          .not('slug', 'is', null)
+          .order('criado_em', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (data?.slug) {
+          setSlugDaEmpresa(data.slug);
+          localStorage.setItem('horza_slug_master', data.slug);
         }
       }
     }
-    
-    if (isAdminOuGerente || isFuncionario) {
+
+    if (podePainelBarbearia || podePainelBarbeiro) {
       buscarSlugDaEmpresa();
     }
-  }, [profile]);
+  }, [profile, podePainelBarbearia, podePainelBarbeiro, isSuperAdmin]);
 
   const pathParts = location.pathname.split('/').filter(Boolean);
   const isRotaGlobal = pathParts.length > 0 && ['master', 'area-cliente'].includes(pathParts[0]);
   const slugNaUrl = (!isRotaGlobal && pathParts.length > 0) ? pathParts[0] : null;
+  const slugPainel = slugDaEmpresa || slugNaUrl;
 
   const linkInicio = slugNaUrl ? `/${slugNaUrl}` : '/';
   const linkAgendar = slugNaUrl ? `/${slugNaUrl}/agendar` : '/';
@@ -132,15 +160,15 @@ export default function MenuNavegacao({ onOpenLogin }) {
             </Link>
           )}
           
-          {user && isAdminOuGerente && slugDaEmpresa && (
-            <Link to={`/${slugDaEmpresa}/admin`} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-brand bg-brand/5 hover:bg-brand/10 border border-brand/20 text-sm font-bold transition-all shadow-sm">
+          {user && podePainelBarbearia && slugPainel && (
+            <Link to={`/${slugPainel}/admin`} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-brand bg-brand/5 hover:bg-brand/10 border border-brand/20 text-sm font-bold transition-all shadow-sm">
               <LayoutDashboard size={18} /> Painel Admin
             </Link>
           )}
 
-          {user && isFuncionario && slugDaEmpresa && (
-            <Link to={`/${slugDaEmpresa}/barbeiro`} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-brand bg-brand/5 hover:bg-brand/10 border border-brand/20 text-sm font-bold transition-all shadow-sm">
-              <Clock size={18} /> Minha Agenda
+          {user && podePainelBarbeiro && slugPainel && (
+            <Link to={`/${slugPainel}/barbeiro`} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-brand bg-brand/5 hover:bg-brand/10 border border-brand/20 text-sm font-bold transition-all shadow-sm">
+              <Clock size={18} /> Painel Barbeiro
             </Link>
           )}
         </nav>
@@ -157,7 +185,7 @@ export default function MenuNavegacao({ onOpenLogin }) {
 
           {user ? (
             <div className="flex items-center gap-4 animate-fadeIn ml-2">
-              <Link to="/area-cliente" className="flex items-center gap-2 px-4 py-2 rounded-full bg-background border border-border-line hover:border-brand transition-all group shadow-sm">
+              <Link to={linkPerfil} className="flex items-center gap-2 px-4 py-2 rounded-full bg-background border border-border-line hover:border-brand transition-all group shadow-sm">
                 <div className="h-7 w-7 rounded-full bg-brand/10 text-brand flex items-center justify-center text-xs font-black group-hover:bg-brand group-hover:text-white transition-colors">
                   {getInicial()}
                 </div>
@@ -206,22 +234,22 @@ export default function MenuNavegacao({ onOpenLogin }) {
           </Link>
         )}
 
-        {user && isAdminOuGerente && slugDaEmpresa && (
-          <Link to={`/${slugDaEmpresa}/admin`} className={`flex flex-col items-center gap-1.5 transition-colors cursor-pointer p-2 w-16 ${location.pathname.includes('/admin') ? 'text-brand' : 'text-text-muted hover:text-brand'}`}>
+        {user && podePainelBarbearia && slugPainel && (
+          <Link to={`/${slugPainel}/admin`} className={`flex flex-col items-center gap-1.5 transition-colors cursor-pointer p-2 w-16 ${location.pathname.includes('/admin') ? 'text-brand' : 'text-text-muted hover:text-brand'}`}>
             <LayoutDashboard size={22} strokeWidth={2.5} />
             <span className="text-[10px] font-black tracking-wider">Painel</span>
           </Link>
         )}
 
-        {user && isFuncionario && slugDaEmpresa && (
-          <Link to={`/${slugDaEmpresa}/barbeiro`} className={`flex flex-col items-center gap-1.5 transition-colors cursor-pointer p-2 w-16 ${location.pathname.includes('/barbeiro') ? 'text-brand' : 'text-text-muted hover:text-brand'}`}>
+        {user && podePainelBarbeiro && slugPainel && (
+          <Link to={`/${slugPainel}/barbeiro`} className={`flex flex-col items-center gap-1.5 transition-colors cursor-pointer p-2 w-16 ${location.pathname.includes('/barbeiro') ? 'text-brand' : 'text-text-muted hover:text-brand'}`}>
             <Clock size={22} strokeWidth={2.5} />
-            <span className="text-[10px] font-black tracking-wider">Agenda</span>
+            <span className="text-[10px] font-black tracking-wider">Barbeiro</span>
           </Link>
         )}
 
         {user ? (
-          <Link to="/area-cliente" className={`flex flex-col items-center gap-1.5 transition-colors cursor-pointer p-2 w-16 ${location.pathname.includes('/area-cliente') ? 'text-brand' : 'text-text-muted hover:text-brand'}`}>
+          <Link to={linkPerfil} className={`flex flex-col items-center gap-1.5 transition-colors cursor-pointer p-2 w-16 ${location.pathname.includes('/area-cliente') ? 'text-brand' : 'text-text-muted hover:text-brand'}`}>
             <User size={22} strokeWidth={2.5} />
             <span className="text-[10px] font-black tracking-wider">Conta</span>
           </Link>

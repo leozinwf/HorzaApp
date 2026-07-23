@@ -7,6 +7,7 @@ import {
   ChevronLeft, ChevronRight, Scissors, Lock, Unlock, CalendarDays,
   Info, CalendarOff, RefreshCcw
 } from 'lucide-react';
+import { getDayBoundsISO, getHojeFormatoHTML } from '../../utils/formatters';
 
 export default function AgendaBarbeiro() {
   const { user, profile } = useAuth();
@@ -17,7 +18,7 @@ export default function AgendaBarbeiro() {
   const [excecoes, setExcecoes] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const hojeFormatoHTML = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const hojeFormatoHTML = getHojeFormatoHTML();
   const [dataSelecionada, setDataSelecionada] = useState(hojeFormatoHTML);
   const [tab, setTab] = useState('agenda');
 
@@ -36,9 +37,7 @@ export default function AgendaBarbeiro() {
       const { data: exc } = await supabase.from('excecoes_agenda').select('*').eq('barbeiro_id', user.id).eq('data', dataSelecionada);
       setExcecoes(exc || []);
 
-      // Correção de Timezone para evitar bugs na virada da meia-noite
-      const dataInicio = new Date(`${dataSelecionada}T00:00:00-03:00`).toISOString();
-      const dataFim = new Date(`${dataSelecionada}T23:59:59-03:00`).toISOString();
+      const { inicio: dataInicio, fim: dataFim } = getDayBoundsISO(dataSelecionada);
 
       // ✨ CORREÇÃO DO BUG: Explicitar qual "usuario" estamos puxando (o cliente)
       const { data: ags, error } = await supabase

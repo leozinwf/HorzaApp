@@ -160,7 +160,8 @@ export default function CadastroBarbearia() {
         cidade: cidade,
         estado: estado,
         telefone: whatsapp,
-        plano_ativo: 'pendente_aprovacao'
+        plano_ativo: 'pendente_aprovacao',
+        status: 'pendente'
       }]).select('id').single();
 
       if (barbError) throw new Error('Este SLUG já está em uso ou ocorreu um erro no servidor.');

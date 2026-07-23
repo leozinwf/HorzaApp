@@ -1,71 +1,31 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabaseClient';
 
-const AuthContext = createContext({});
+const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [authReady, setAuthReady] = useState(false);
+  const profileRequestId = useRef(0);
 
-  // Função auxiliar para injetar a cor no CSS
   const aplicarCorDaBarbearia = (corHex) => {
     if (corHex) {
       document.documentElement.style.setProperty('--color-brand', corHex);
     }
   };
 
-  useEffect(() => {
-    // 1. Carrega a sessão inicial assim que a aplicação abre
-    const initializeAuth = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        setUser(session?.user ?? null);
-        
-        if (session?.user) {
-          await fetchProfile(session.user.id);
-        } else {
-          setLoading(false);
-        }
-      } catch (error) {
-        console.error('Erro na inicialização da Auth:', error);
-        setLoading(false);
-      }
-    };
-
-    initializeAuth();
-
-    // 2. Escuta mudanças na autenticação (Login, Logout, Token Expirado, Recuperação de Senha)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      setUser(session?.user ?? null);
-
-      if (session?.user) {
-        await fetchProfile(session.user.id);
-      } else {
-        setProfile(null);
-        setLoading(false);
-      }
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  // 3. Função dedicada para buscar o Perfil com base no ID
-  const fetchProfile = async (userId) => {
+  const fetchProfile = async (userId, requestId, silent = false) => {
     try {
-      // Usamos .select() sem .single() para evitar o erro se não encontrar nada ainda
       const { data, error: userError } = await supabase
         .from('usuarios')
         .select('*')
         .eq('id', userId);
-      
-      if (userError) throw userError;
 
-      // Se o array estiver vazio, significa que o registro ainda não existe (novo cadastro)
+      if (userError) throw userError;
+      if (requestId !== profileRequestId.current) return;
+
       if (!data || data.length === 0) {
-        console.warn('Perfil ainda não criado para este usuário.');
         setProfile(null);
         return;
       }
@@ -73,7 +33,6 @@ export const AuthProvider = ({ children }) => {
       const userData = data[0];
       setProfile(userData);
 
-      // --- Whitelabel (Cores Dinâmicas) ---
       if (userData?.barbearia_id) {
         const { data: barbeariaData, error: barbeariaError } = await supabase
           .from('barbearias')
@@ -81,37 +40,96 @@ export const AuthProvider = ({ children }) => {
           .eq('id', userData.barbearia_id)
           .single();
 
+        if (requestId !== profileRequestId.current) return;
+
         if (!barbeariaError && barbeariaData?.cor_primaria) {
           aplicarCorDaBarbearia(barbeariaData.cor_primaria);
         }
       }
-
     } catch (error) {
+      if (requestId !== profileRequestId.current) return;
       console.error('Erro ao buscar o perfil do utilizador:', error.message);
-      setProfile(null);
-    } finally {
-      setLoading(false);
+      if (!silent) setProfile(null);
     }
   };
 
-  // 4. Função global de Logout
+  useEffect(() => {
+    let mounted = true;
+
+    const bootstrap = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!mounted) return;
+
+      const requestId = ++profileRequestId.current;
+      setUser(session?.user ?? null);
+
+      if (session?.user) {
+        await fetchProfile(session.user.id, requestId);
+      } else {
+        aplicarCorDaBarbearia('#f59e0b');
+      }
+
+      if (mounted) setAuthReady(true);
+    };
+
+    bootstrap();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return;
+
+      const requestId = ++profileRequestId.current;
+      setUser(session?.user ?? null);
+
+      if (event === 'SIGNED_OUT') {
+        setProfile(null);
+        aplicarCorDaBarbearia('#f59e0b');
+        setAuthReady(true);
+        return;
+      }
+
+      if (event === 'TOKEN_REFRESHED') {
+        if (session?.user) {
+          await fetchProfile(session.user.id, requestId, true);
+        }
+        return;
+      }
+
+      if (session?.user) {
+        await fetchProfile(session.user.id, requestId);
+      } else {
+        setProfile(null);
+        aplicarCorDaBarbearia('#f59e0b');
+      }
+
+      setAuthReady(true);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
   const logout = async () => {
-    setLoading(true);
+    profileRequestId.current += 1;
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
-    
-    // Repõe a cor padrão do sistema (Laranja) ao fazer logout
-    aplicarCorDaBarbearia('#f59e0b'); 
-    
-    setLoading(false);
+    aplicarCorDaBarbearia('#f59e0b');
+    setAuthReady(true);
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, logout, fetchProfile }}>
+    <AuthContext.Provider value={{ user, profile, loading: !authReady, authReady, logout }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = () => useContext(AuthContext);
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth deve ser usado dentro de AuthProvider');
+  }
+  return context;
+};

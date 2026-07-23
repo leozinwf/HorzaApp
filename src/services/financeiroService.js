@@ -11,7 +11,7 @@ export const financeiroService = {
       .order('data_transacao', { ascending: false });
 
     if (error) throw error;
-    return data;
+    return data || [];
   },
 
   async obterEquipe(barbeariaId) {
@@ -22,7 +22,7 @@ export const financeiroService = {
       .in('role', ['admin', 'gerente', 'funcionario']);
 
     if (error) throw error;
-    return data;
+    return data || [];
   },
 
   async obterCategorias(barbeariaId) {
@@ -33,7 +33,7 @@ export const financeiroService = {
       .order('nome', { ascending: true });
 
     if (error) throw error;
-    return data;
+    return data || [];
   },
 
   async adicionarTransacaoUnica(payload) {
@@ -61,16 +61,20 @@ export const financeiroService = {
     if (error) throw error;
   },
 
-  async deletarTransacoesFuturas(grupoRecorrencia, dataReferencia) {
+  async deletarTransacoesFuturas(grupoRecorrencia, dataReferencia, barbeariaId) {
     const { error } = await supabase.from('transacoes')
       .delete()
       .eq('grupo_recorrencia', grupoRecorrencia)
+      .eq('barbearia_id', barbeariaId)
       .gte('data_transacao', dataReferencia);
     if (error) throw error;
   },
 
-  async deletarTransacoesGrupo(grupoRecorrencia) {
-    const { error } = await supabase.from('transacoes').delete().eq('grupo_recorrencia', grupoRecorrencia);
+  async deletarTransacoesGrupo(grupoRecorrencia, barbeariaId) {
+    const { error } = await supabase.from('transacoes')
+      .delete()
+      .eq('grupo_recorrencia', grupoRecorrencia)
+      .eq('barbearia_id', barbeariaId);
     if (error) throw error;
   },
 
@@ -81,11 +85,13 @@ export const financeiroService = {
 
   async atualizarCategoria(id, payload, nomeAntigo, barbeariaId) {
     if (payload.nome !== nomeAntigo) {
-      await supabase.from('transacoes')
+      const { error: transacoesError } = await supabase.from('transacoes')
         .update({ categoria: payload.nome })
         .eq('categoria', nomeAntigo)
         .eq('barbearia_id', barbeariaId);
+      if (transacoesError) throw transacoesError;
     }
+
     const { error } = await supabase.from('categorias_personalizadas').update(payload).eq('id', id);
     if (error) throw error;
   },
@@ -94,7 +100,8 @@ export const financeiroService = {
     const { data, error } = await supabase.from('transacoes')
       .select('id')
       .eq('categoria', nomeCategoria)
-      .eq('barbearia_id', barbeariaId);
+      .eq('barbearia_id', barbeariaId)
+      .limit(1);
     if (error) throw error;
     return data && data.length > 0;
   },
@@ -105,11 +112,12 @@ export const financeiroService = {
   },
 
   async migrarEExcluirCategoria(nomeAntigo, nomeNovo, categoriaId, barbeariaId) {
-    await supabase.from('transacoes')
+    const { error: transacoesError } = await supabase.from('transacoes')
       .update({ categoria: nomeNovo })
       .eq('categoria', nomeAntigo)
       .eq('barbearia_id', barbeariaId);
-      
+    if (transacoesError) throw transacoesError;
+
     const { error } = await supabase.from('categorias_personalizadas').delete().eq('id', categoriaId);
     if (error) throw error;
   }

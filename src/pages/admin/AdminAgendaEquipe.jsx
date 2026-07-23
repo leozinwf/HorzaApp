@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
 import { useModal } from '../../context/ModalContext';
-import { Calendar, Clock, User, Phone, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, Scissors, Filter, Info, X, DollarSign, CreditCard, Wallet } from 'lucide-react';
+import { Calendar, Clock, User, Phone, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, Scissors, Filter, Info, X, DollarSign, CreditCard, Wallet, PlusCircle, MinusCircle, RotateCcw } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getDayBoundsISO, getHojeFormatoHTML } from '../../utils/formatters';
 
 export default function AdminAgendaEquipe() {
   const { profile } = useAuth();
@@ -14,7 +15,7 @@ export default function AdminAgendaEquipe() {
   const [configAgenda, setConfigAgenda] = useState(null);
   const [loading, setLoading] = useState(true);
   
-  const hojeFormatoHTML = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const hojeFormatoHTML = getHojeFormatoHTML();
   const [dataSelecionada, setDataSelecionada] = useState(hojeFormatoHTML);
   const [barbeiroFiltro, setBarbeiroFiltro] = useState('todos');
 
@@ -26,6 +27,11 @@ export default function AdminAgendaEquipe() {
   const [formaPagamento, setFormaPagamento] = useState('dinheiro');
   const [processandoBaixa, setProcessandoBaixa] = useState(false);
 
+  /** Minutos extras no fechamento só para o dia selecionado (sessão) */
+  const [minutosExtraDia, setMinutosExtraDia] = useState(0);
+  /** Horários ocultos manualmente neste dia */
+  const [horariosOcultos, setHorariosOcultos] = useState([]);
+
   useEffect(() => {
     if (profile?.barbearia_id) {
       carregarConfigECarregarequipe();
@@ -33,33 +39,40 @@ export default function AdminAgendaEquipe() {
   }, [profile]);
 
   useEffect(() => {
-    if (barbeiros.length > 0 && configAgenda) {
-      buscarAgendaGeral();
+    if (!configAgenda) return;
+
+    if (barbeiros.length === 0) {
+      setAgendamentos([]);
+      setLoading(false);
+      return;
     }
+
+    buscarAgendaGeral();
   }, [dataSelecionada, barbeiroFiltro, barbeiros, configAgenda]);
 
   const carregarConfigECarregarequipe = async () => {
+    if (!configAgenda) setLoading(true);
     try {
-      // Pega config da barbearia (Horários)
       const { data: config } = await supabase.from('barbearias').select('hora_abertura, hora_fechamento').eq('id', profile.barbearia_id).single();
       setConfigAgenda(config);
 
-      // Pega os barbeiros
       const { data: equipe } = await supabase.from('usuarios').select('id, nome').eq('barbearia_id', profile.barbearia_id).in('role', ['admin', 'gerente', 'funcionario']);
       setBarbeiros(equipe || []);
     } catch (err) {
       console.error(err);
+      toast.error('Erro ao carregar configurações da agenda.');
+      setConfigAgenda({});
+      setLoading(false);
     }
   };
 
   const buscarAgendaGeral = async () => {
-    setLoading(true);
+    if (agendamentos.length === 0) setLoading(true);
     try {
       const barbeirosIds = barbeiros.map(b => b.id);
       if (barbeirosIds.length === 0) return;
 
-      const dataInicio = new Date(`${dataSelecionada}T00:00:00`).toISOString();
-      const dataFim = new Date(`${dataSelecionada}T23:59:59`).toISOString();
+      const { inicio: dataInicio, fim: dataFim } = getDayBoundsISO(dataSelecionada);
 
       let query = supabase.from('agendamentos').select(`
           id, data_hora, status_atendimento, forma_pagamento, nome_cliente_avulso, whatsapp_cliente_avulso,
@@ -88,40 +101,43 @@ export default function AdminAgendaEquipe() {
 
   // ✨ FUNÇÃO PARA DAR BAIXA NO AGENDAMENTO (PAGAMENTO)
   const handleDarBaixa = async () => {
+    if (agendamentoDetalhe?.status_atendimento === 'concluido') {
+      toast.error('Este agendamento já foi finalizado.');
+      return;
+    }
+
     setProcessandoBaixa(true);
     try {
-      // 1. Atualiza o status do agendamento para concluído e salva a forma de pagamento
-      const { error: updateError } = await supabase
+      const { error: rpcError } = await supabase.rpc('concluir_agendamento_e_pontuar', {
+        p_agendamento_id: agendamentoDetalhe.id
+      });
+      if (rpcError) throw rpcError;
+
+      const { error: pagamentoError } = await supabase
         .from('agendamentos')
-        .update({
-          status_atendimento: 'concluido',
-          forma_pagamento: formaPagamento
-        })
+        .update({ forma_pagamento: formaPagamento })
         .eq('id', agendamentoDetalhe.id);
 
-      if (updateError) throw updateError;
+      if (pagamentoError) throw pagamentoError;
 
-      // 2. Insere a movimentação na tabela financeiro (Caso já tenha uma tabela estruturada)
-      const { error: financeiroError } = await supabase
-        .from('financeiro')
-        .insert([{
-          barbearia_id: profile.barbearia_id,
-          tipo: 'entrada',
-          descricao: `Serviço: ${agendamentoDetalhe.servicos?.nome_servico} - Cliente: ${agendamentoDetalhe.nome_cliente_avulso || agendamentoDetalhe.clientes?.nome}`,
-          valor: agendamentoDetalhe.servicos?.preco || 0,
-          forma_pagamento: formaPagamento,
-          data_pagamento: new Date().toISOString(),
-          status: 'pago'
-        }]);
+      const nomeCliente = agendamentoDetalhe.nome_cliente_avulso || agendamentoDetalhe.clientes?.nome || 'Cliente';
+      const { error: financeiroError } = await supabase.from('transacoes').insert([{
+        barbearia_id: profile.barbearia_id,
+        tipo: 'entrada',
+        descricao: `Serviço: ${agendamentoDetalhe.servicos?.nome_servico} - Cliente: ${nomeCliente}`,
+        valor: agendamentoDetalhe.servicos?.preco || 0,
+        categoria: 'Serviços',
+        forma_pagamento: formaPagamento,
+        data_transacao: new Date().toISOString(),
+        status: 'concluido'
+      }]);
 
-      if (financeiroError) {
-        console.warn('Tabela financeiro pode não estar configurada exatamente assim:', financeiroError.message);
-      }
+      if (financeiroError) throw financeiroError;
 
       toast.success('Atendimento finalizado e pagamento registrado!');
       setAgendamentoDetalhe(null);
       setShowCheckout(false);
-      buscarAgendaGeral(); // Atualiza a tela
+      buscarAgendaGeral();
 
     } catch (err) {
       toast.error('Erro ao dar baixa: ' + err.message);
@@ -135,11 +151,37 @@ export default function AdminAgendaEquipe() {
     setShowCheckout(false);
   };
 
+  useEffect(() => {
+    setMinutosExtraDia(0);
+    setHorariosOcultos([]);
+  }, [dataSelecionada]);
+
+  const estenderHorarioDia = (minutos = 60) => {
+    setMinutosExtraDia((prev) => prev + minutos);
+    toast.success(`+${minutos} min adicionados ao expediente deste dia.`);
+  };
+
+  const removerExtensao = () => {
+    setMinutosExtraDia(0);
+    toast.success('Extensão de horário removida.');
+  };
+
+  const ocultarHorario = (slotTime) => {
+    setHorariosOcultos((prev) => (prev.includes(slotTime) ? prev : [...prev, slotTime]));
+    toast.success(`Horário ${slotTime} ocultado neste dia.`);
+  };
+
+  const restaurarHorariosOcultos = () => {
+    setHorariosOcultos([]);
+    toast.success('Horários ocultos restaurados.');
+  };
+
   const gerarSlots = () => {
     if (!configAgenda) return [];
     const slots = [];
     let atual = new Date(`2000-01-01T${configAgenda.hora_abertura || '09:00:00'}`);
-    const fim = new Date(`2000-01-01T${configAgenda.hora_fechamento || '19:00:00'}`);
+    const fimBase = new Date(`2000-01-01T${configAgenda.hora_fechamento || '19:00:00'}`);
+    const fim = new Date(fimBase.getTime() + minutosExtraDia * 60000);
 
     while (atual <= fim) {
       slots.push(atual.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
@@ -148,7 +190,7 @@ export default function AdminAgendaEquipe() {
     return slots;
   };
 
-  const slotsHorarios = gerarSlots();
+  const slotsHorarios = gerarSlots().filter((s) => !horariosOcultos.includes(s));
 
   return (
     <div className="p-4 md:p-10 pb-24 md:pb-10 max-w-5xl mx-auto">
@@ -176,10 +218,38 @@ export default function AdminAgendaEquipe() {
             </select>
           </div>
         </div>
+
+        <div className="bg-surface p-4 rounded-2xl border border-border-line shadow-sm flex flex-col gap-2 min-w-[220px]">
+          <label className="block text-[10px] font-bold text-text-muted uppercase tracking-wider">Estender expediente do dia</label>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => estenderHorarioDia(30)} className="flex-1 bg-background border border-border-line py-2 rounded-xl text-xs font-bold hover:border-brand cursor-pointer">
+              +30 min
+            </button>
+            <button type="button" onClick={() => estenderHorarioDia(60)} className="flex-1 bg-brand text-white py-2 rounded-xl text-xs font-bold hover:brightness-110 cursor-pointer flex items-center justify-center gap-1">
+              <PlusCircle size={14} /> +1h
+            </button>
+            <button type="button" onClick={() => estenderHorarioDia(120)} className="flex-1 bg-background border border-border-line py-2 rounded-xl text-xs font-bold hover:border-brand cursor-pointer">
+              +2h
+            </button>
+          </div>
+          {minutosExtraDia > 0 && (
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] text-brand font-bold">+{minutosExtraDia} min extra</p>
+              <button type="button" onClick={removerExtensao} className="text-[10px] font-bold text-red-500 hover:underline cursor-pointer flex items-center gap-1">
+                <RotateCcw size={12} /> Remover extensão
+              </button>
+            </div>
+          )}
+          {horariosOcultos.length > 0 && (
+            <button type="button" onClick={restaurarHorariosOcultos} className="text-[10px] font-bold text-text-muted hover:text-brand cursor-pointer">
+              Restaurar {horariosOcultos.length} horário(s) oculto(s)
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="animate-fadeIn">
-        {loading ? (
+        {loading && agendamentos.length === 0 && slotsHorarios.length === 0 ? (
           <div className="flex justify-center py-20"><div className="h-8 w-8 border-4 border-brand border-t-transparent rounded-full animate-spin"></div></div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -216,9 +286,19 @@ export default function AdminAgendaEquipe() {
                 });
               } else {
                 return (
-                  <div key={slotTime} className="bg-surface border border-dashed border-border-line p-4 rounded-2xl flex items-center justify-between opacity-60 hover:opacity-100 transition-opacity">
+                  <div key={slotTime} className="bg-surface border border-dashed border-border-line p-4 rounded-2xl flex items-center justify-between opacity-80 hover:opacity-100 transition-opacity group">
                     <span className="font-black text-text-muted text-lg">{slotTime}</span>
-                    <span className="text-xs font-bold text-green-500 flex items-center gap-1"><CheckCircle2 size={14}/> Livre</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-green-500 flex items-center gap-1"><CheckCircle2 size={14}/> Livre</span>
+                      <button
+                        type="button"
+                        onClick={() => ocultarHorario(slotTime)}
+                        className="opacity-100 sm:opacity-0 group-hover:opacity-100 p-1.5 rounded-lg border border-border-line text-red-500 hover:bg-red-500/10 cursor-pointer"
+                        title="Ocultar este horário"
+                      >
+                        <MinusCircle size={16} />
+                      </button>
+                    </div>
                   </div>
                 );
               }

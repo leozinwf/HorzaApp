@@ -4,7 +4,7 @@ import { supabase } from '../../services/supabaseClient';
 import { 
   LayoutDashboard, Users, Scissors, Package, DollarSign, 
   Building2, CalendarDays, ShieldCheck, CreditCard, Star,
-  UserCheck, Menu, X, ChevronDown, Clock, ArrowLeft, Rocket, Check
+  UserCheck, Menu, X, ChevronDown, Clock, ArrowLeft, Rocket, Check, Link2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -14,9 +14,17 @@ export default function AdminLayout() {
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
   
   // Estados para a trava de aprovação e onboarding
-  const [dadosEmpresa, setDadosEmpresa] = useState(null);
-  const [loadingStatus, setLoadingStatus] = useState(true);
+  const [dadosEmpresa, setDadosEmpresa] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem(`admin_empresa_${slug}`);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [loadingStatus, setLoadingStatus] = useState(!dadosEmpresa);
   const [salvandoOnboarding, setSalvandoOnboarding] = useState(false);
+  const [onboardingCompleto, setOnboardingCompleto] = useState(true);
 
   // Estado do formulário de Onboarding
   const [formOnboarding, setFormOnboarding] = useState({
@@ -37,18 +45,21 @@ export default function AdminLayout() {
       try {
         const { data, error } = await supabase
           .from('barbearias')
-          .select('id, status, onboarding_completo, razao_social, instagram, hora_abertura, hora_fechamento, dias_funcionamento')
+          .select('id, status, plano_ativo, razao_social, hora_abertura, hora_fechamento, dias_funcionamento, redes_sociais')
           .eq('slug', slug)
           .single();
 
         if (error) throw error;
         setDadosEmpresa(data);
-        
-        // Se a empresa já tiver alguns dados preenchidos, joga pro form
-        if (data && !data.onboarding_completo) {
+        sessionStorage.setItem(`admin_empresa_${slug}`, JSON.stringify(data));
+
+        const precisaOnboarding = data?.status === 'aprovada' && !data?.razao_social;
+        setOnboardingCompleto(!precisaOnboarding);
+
+        if (data && precisaOnboarding) {
           setFormOnboarding({
             razao_social: data.razao_social || '',
-            instagram: data.instagram || '',
+            instagram: data.redes_sociais?.instagram || '',
             hora_abertura: data.hora_abertura || '09:00',
             hora_fechamento: data.hora_fechamento || '19:00',
             dias_funcionamento: data.dias_funcionamento || [1, 2, 3, 4, 5, 6]
@@ -85,16 +96,22 @@ export default function AdminLayout() {
     try {
       const { error } = await supabase
         .from('barbearias')
-        .update({ 
-          ...formOnboarding, 
-          onboarding_completo: true 
+        .update({
+          razao_social: formOnboarding.razao_social,
+          hora_abertura: formOnboarding.hora_abertura,
+          hora_fechamento: formOnboarding.hora_fechamento,
+          dias_funcionamento: formOnboarding.dias_funcionamento,
+          redes_sociais: formOnboarding.instagram
+            ? { ...(dadosEmpresa.redes_sociais || {}), instagram: formOnboarding.instagram }
+            : dadosEmpresa.redes_sociais
         })
         .eq('id', dadosEmpresa.id);
 
       if (error) throw error;
 
       toast.success('Tudo pronto! Bem-vindo ao painel.');
-      setDadosEmpresa(prev => ({ ...prev, onboarding_completo: true }));
+      setDadosEmpresa(prev => ({ ...prev, ...formOnboarding }));
+      setOnboardingCompleto(true);
     } catch (err) {
       toast.error('Erro ao salvar os dados.');
       console.error(err);
@@ -114,6 +131,7 @@ export default function AdminLayout() {
     { path: `/${slug}/admin/pagamentos`, icon: <CreditCard size={20} />, label: 'Pagamentos', group: 'Financeiro' },
     { path: `/${slug}/admin/financeiro`, icon: <DollarSign size={20} />, label: 'Financeiro', group: 'Financeiro' },
     { path: `/${slug}/admin/empresa`, icon: <Building2 size={20} />, label: 'Empresa', group: 'Config' },
+    { path: `/${slug}/admin/integracoes`, icon: <Link2 size={20} />, label: 'Integrações', group: 'Config' },
     { path: `/${slug}/admin/permissoes`, icon: <ShieldCheck size={20} />, label: 'Permissões', group: 'Config' },
   ];
 
@@ -123,12 +141,28 @@ export default function AdminLayout() {
       : location.pathname.startsWith(i.path)
   ) || menuItems[0];
 
-  if (loadingStatus) {
-    return <div className="flex h-screen items-center justify-center bg-background"><div className="animate-spin h-8 w-8 border-4 border-brand border-t-transparent rounded-full"></div></div>;
+  if (loadingStatus && !dadosEmpresa) {
+    return null;
   }
 
+  if (!dadosEmpresa) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-background p-6 text-center">
+        <div className="bg-surface border border-border-line p-8 rounded-3xl max-w-md w-full shadow-lg">
+          <h1 className="text-xl font-black text-text-base mb-3">Barbearia não encontrada</h1>
+          <p className="text-text-muted mb-6 text-sm">Não foi possível carregar os dados desta barbearia.</p>
+          <Link to="/" className="inline-flex items-center gap-2 bg-brand text-white px-6 py-3 rounded-xl font-bold">
+            <ArrowLeft size={18} /> Voltar para o início
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const isPendente = dadosEmpresa.status === 'pendente' || dadosEmpresa.plano_ativo === 'pendente_aprovacao';
+
   // TELA 1: BLOQUEIO - PENDENTE APROVAÇÃO
-  if (dadosEmpresa?.status === 'pendente') {
+  if (isPendente) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background p-6 text-center">
         <div className="bg-surface border border-border-line p-8 rounded-3xl max-w-md w-full shadow-lg flex flex-col items-center">
@@ -148,7 +182,7 @@ export default function AdminLayout() {
   }
 
   // TELA 2: ONBOARDING INICIAL - OBRIGATÓRIO
-  if (dadosEmpresa?.status === 'aprovada' && dadosEmpresa?.onboarding_completo === false) {
+  if (dadosEmpresa?.status === 'aprovada' && !onboardingCompleto) {
     return (
       <div className="min-h-screen bg-background flex flex-col justify-center items-center p-6">
         <div className="w-full max-w-2xl bg-surface border border-border-line rounded-3xl p-8 shadow-xl animate-fadeIn">

@@ -3,15 +3,19 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
 import { Calendar, Clock, User, CheckCircle2, ChevronRight, ArrowLeft, X, AlertTriangle, Mail, Phone, LogIn, Check, Scissors } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { dateTimeToISO } from '../../utils/formatters';
+import AdicionarCalendario from '../../components/shared/AdicionarCalendario';
+import { notificarNovoAgendamento } from '../../services/agendamentoNotificacaoService';
 
 export default function AgendamentoCliente({ onOpenLogin }) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
   const { slug } = useParams(); // CAPTURA DA URL
 
   const [barbeariaContext, setBarbeariaContext] = useState(null);
   const [servicos, setServicos] = useState([]);
   const [barbeiros, setBarbeiros] = useState([]);
+  const [carregandoBarbeiros, setCarregandoBarbeiros] = useState(false);
   
   const [passo, setPasso] = useState(1);
   const [servicoSelecionado, setServicoSelecionado] = useState(null);
@@ -27,6 +31,20 @@ export default function AgendamentoCliente({ onOpenLogin }) {
   const [whatsappGuest, setWhatsappGuest] = useState('');
   const [emailGuest, setEmailGuest] = useState('');
   const [jaTinhaConta, setJaTinhaConta] = useState(false);
+  const [agendamentoId, setAgendamentoId] = useState(null);
+
+  const finalizarAgendamento = async (novoId) => {
+    setAgendamentoId(novoId);
+    localStorage.removeItem('agendamento_pendente');
+    setPasso(4);
+    notificarNovoAgendamento(novoId);
+  };
+
+  const getDadosCliente = () => ({
+    nome: user ? (profile?.nome || user.user_metadata?.nome) : nomeGuest,
+    email: user ? (profile?.email || user.email) : emailGuest,
+    whatsapp: user ? profile?.whatsapp : whatsappGuest,
+  });
 
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); 
@@ -109,18 +127,27 @@ export default function AgendamentoCliente({ onOpenLogin }) {
   };
 
   const buscarBarbeiros = async (barbeariaId) => {
+    setCarregandoBarbeiros(true);
     try {
       const { data: barbeirosData, error } = await supabase
         .from('usuarios')
-        .select('id, nome, avatar_url')
+        .select('id, nome, avatar_url, role, exibe_na_agenda, ativo')
         .eq('barbearia_id', barbeariaId)
-        .eq('exibe_na_agenda', true)
+        .in('role', ['admin', 'gerente', 'funcionario'])
         .eq('ativo', true);
 
       if (error) throw error;
-      if (barbeirosData) setBarbeiros(barbeirosData);
+
+      const visiveis = (barbeirosData || []).filter(
+        (b) => b.exibe_na_agenda !== false
+      );
+
+      setBarbeiros(visiveis);
     } catch (err) {
       console.error('Erro ao buscar barbeiros:', err.message);
+      setBarbeiros([]);
+    } finally {
+      setCarregandoBarbeiros(false);
     }
   };
 
@@ -193,26 +220,35 @@ export default function AgendamentoCliente({ onOpenLogin }) {
   const handleConfirmarAgendamento = async (e) => {
     e.preventDefault();
 
-    const res = await fetch('https://api.ipify.org?format=json');
-    const { ip } = await res.json();
-
-    const { data: podeAgendar } = await supabase.rpc('verificar_limite_agendamentos', { ip_requisitante: ip });
-    
-    if (!podeAgendar) {
-        alert('Muitas tentativas de agendamento detectadas. Tente novamente em uma hora.');
-        return;
+    if (!data || !horario) {
+      alert('Selecione uma data e um horário válidos.');
+      return;
     }
 
-    await supabase.from('agendamento_logs').insert([{ ip_address: ip }]);
-
-    if (!data || !horario) return alert('Selecione uma data e um horário válidos.');
-
     setLoading(true);
+
     try {
-      const dataHoraIso = new Date(`${data}T${horario}:00`).toISOString();
+      let ip = null;
+      try {
+        const res = await fetch('https://api.ipify.org?format=json');
+        const ipData = await res.json();
+        ip = ipData.ip;
+
+        const { data: podeAgendar } = await supabase.rpc('verificar_limite_agendamentos', { ip_requisitante: ip });
+        if (!podeAgendar) {
+          alert('Muitas tentativas de agendamento detectadas. Tente novamente em uma hora.');
+          return;
+        }
+
+        await supabase.from('agendamento_logs').insert([{ ip_address: ip }]);
+      } catch (ipError) {
+        console.warn('Verificação de IP indisponível, continuando agendamento:', ipError);
+      }
+
+      const dataHoraIso = dateTimeToISO(data, horario);
 
       if (user) {
-        const { error } = await supabase.from('agendamentos').insert([{
+        const { data: inserted, error } = await supabase.from('agendamentos').insert([{
           barbearia_id: servicoSelecionado.barbearia_id,
           cliente_id: user.id,
           barbeiro_id: barbeiroSelecionado.id,
@@ -220,15 +256,13 @@ export default function AgendamentoCliente({ onOpenLogin }) {
           data_hora: dataHoraIso,
           status_pagamento: 'pagar_na_hora',
           status_atendimento: 'agendado'
-        }]);
+        }]).select('id').single();
 
         if (error) throw error;
-        setPasso(4);
-      } 
-      else {
+        await finalizarAgendamento(inserted.id);
+      } else {
         if (!nomeGuest || !whatsappGuest || !emailGuest) {
           alert('Preencha os seus dados para podermos confirmar a sua reserva.');
-          setLoading(false);
           return;
         }
 
@@ -243,24 +277,27 @@ export default function AgendamentoCliente({ onOpenLogin }) {
         if (authError) {
           if (authError.message.includes('User already registered')) {
             setJaTinhaConta(true);
-          } else {
-            throw authError; 
+            alert('Este e-mail já possui conta. Faça login para concluir o agendamento.');
+            onOpenLogin?.();
+            return;
           }
-        } else {
-          novoUserId = authData.user?.id;
-          if (novoUserId) {
-            await supabase.from('usuarios').insert([{
-              id: novoUserId,
-              nome: nomeGuest,
-              whatsapp: whatsappGuest,
-              role: 'cliente'
-            }]);
-          }
+          throw authError;
         }
 
-        const { error: agError } = await supabase.from('agendamentos').insert([{
+        novoUserId = authData.user?.id;
+        if (novoUserId) {
+          const { error: profileError } = await supabase.from('usuarios').insert([{
+            id: novoUserId,
+            nome: nomeGuest,
+            whatsapp: whatsappGuest,
+            role: 'cliente'
+          }]);
+          if (profileError) throw profileError;
+        }
+
+        const { data: agInserted, error: agError } = await supabase.from('agendamentos').insert([{
           barbearia_id: servicoSelecionado.barbearia_id,
-          cliente_id: novoUserId || null,
+          cliente_id: novoUserId,
           barbeiro_id: barbeiroSelecionado.id,
           servico_id: servicoSelecionado.id,
           data_hora: dataHoraIso,
@@ -268,12 +305,10 @@ export default function AgendamentoCliente({ onOpenLogin }) {
           status_atendimento: 'agendado',
           nome_cliente_avulso: nomeGuest,
           whatsapp_cliente_avulso: whatsappGuest
-        }]);
+        }]).select('id').single();
 
         if (agError) throw agError;
-        
-        localStorage.removeItem('agendamento_pendente');
-        setPasso(4);
+        await finalizarAgendamento(agInserted.id);
       }
     } catch (err) {
       alert('Erro ao processar agendamento: ' + err.message);
@@ -399,8 +434,13 @@ export default function AgendamentoCliente({ onOpenLogin }) {
               </div>
               
               <div className="grid grid-cols-2 gap-4">
-                {barbeiros.length === 0 ? (
+                {carregandoBarbeiros ? (
                   <div className="col-span-2 flex justify-center p-10"><div className="h-6 w-6 border-2 border-brand border-t-transparent rounded-full animate-spin"></div></div>
+                ) : barbeiros.length === 0 ? (
+                  <div className="col-span-2 bg-amber-500/10 border border-amber-500/20 p-6 rounded-2xl text-center">
+                    <p className="font-bold text-amber-700 mb-1">Nenhum profissional disponível</p>
+                    <p className="text-sm text-text-muted">Peça ao administrador para ativar &quot;Aparece na Agenda&quot; em Permissões ou adicionar membros na Equipe.</p>
+                  </div>
                 ) : (
                   barbeiros.map((barbeiro) => (
                     <button 
@@ -570,6 +610,19 @@ export default function AgendamentoCliente({ onOpenLogin }) {
                   Enviamos um link para o e-mail <strong>{emailGuest}</strong>. Confirme sua conta para facilitar seus próximos acessos.
                 </p>
               ) : null}
+
+              <div className="border-t border-border-line pt-6 mb-6">
+                <AdicionarCalendario
+                  barbearia={barbeariaContext}
+                  servico={servicoSelecionado}
+                  barbeiro={barbeiroSelecionado}
+                  data={data}
+                  horario={horario}
+                  clienteNome={getDadosCliente().nome}
+                  clienteEmail={getDadosCliente().email}
+                  clienteWhatsapp={getDadosCliente().whatsapp}
+                />
+              </div>
               
               <div className="flex flex-col gap-3">
                 {jaTinhaConta && (

@@ -7,6 +7,17 @@ import {
   Receipt, FolderPlus, Tag, Check, X, AlertTriangle, Search, Filter,
   CalendarDays, FilterX
 } from 'lucide-react';
+import { auditLogService } from '../../services/auditLogService';
+import HistoricoMudancas from '../../components/admin/HistoricoMudancas';
+
+const parseTiposCategoria = (tipo) =>
+  (tipo || '').split(',').map((t) => t.trim()).filter(Boolean);
+
+const formatTiposCategoria = (tipos) =>
+  [...tipos].sort().join(',');
+
+const toggleTipoLista = (lista, tipo) =>
+  lista.includes(tipo) ? lista.filter((t) => t !== tipo) : [...lista, tipo];
 
 const formatarParaMoedaExibicao = (valorFloat) => {
   if (valorFloat === undefined || valorFloat === null) return '0,00';
@@ -58,7 +69,7 @@ export default function AdminFinanceiro() {
 
   const [editingCategoria, setEditingCategoria] = useState(null);
   const [novaCatNome, setNovaCatNome] = useState('');
-  const [novaCatTipo, setNovaCatTipo] = useState('');
+  const [novaCatTipos, setNovaCatTipos] = useState([]);
 
   const [migrationModal, setMigrationModal] = useState({ isOpen: false, oldCat: null, newCatName: '' });
   const [deleteRecurringModal, setDeleteRecurringModal] = useState({ isOpen: false, transacao: null });
@@ -183,9 +194,9 @@ export default function AdminFinanceiro() {
       if (opcao === 'unica') {
         await financeiroService.deletarTransacaoUnica(t.id);
       } else if (opcao === 'proximas') {
-        await financeiroService.deletarTransacoesFuturas(t.grupo_recorrencia, t.data_transacao);
+        await financeiroService.deletarTransacoesFuturas(t.grupo_recorrencia, t.data_transacao, profile.barbearia_id);
       } else if (opcao === 'todas') {
-        await financeiroService.deletarTransacoesGrupo(t.grupo_recorrencia);
+        await financeiroService.deletarTransacoesGrupo(t.grupo_recorrencia, profile.barbearia_id);
       }
       setDeleteRecurringModal({ isOpen: false, transacao: null });
       carregarPainelFinanceiro();
@@ -220,42 +231,72 @@ export default function AdminFinanceiro() {
 
   const handleSalvarCategoria = async (e) => {
     e.preventDefault();
-    if (!novaCatNome || !novaCatTipo) return;
+    if (!novaCatNome || novaCatTipos.length === 0) {
+      showAlert('Atenção', 'Informe o nome e ao menos uma destinação (Entrada ou Saída).', 'error');
+      return;
+    }
+
+    const tipoStr = formatTiposCategoria(novaCatTipos);
 
     try {
       if (editingCategoria) {
         await financeiroService.atualizarCategoria(
-          editingCategoria.id, 
-          { nome: novaCatNome, tipo: novaCatTipo }, 
-          editingCategoria.nome, 
+          editingCategoria.id,
+          { nome: novaCatNome, tipo: tipoStr },
+          editingCategoria.nome,
           profile.barbearia_id
         );
+        await auditLogService.registrar({
+          barbeariaId: profile.barbearia_id,
+          usuarioId: profile.id,
+          usuarioNome: profile.nome,
+          modulo: 'financeiro',
+          acao: 'editar',
+          descricao: `Categoria "${novaCatNome}" atualizada`,
+        });
         showAlert('Sucesso', 'Categoria atualizada!', 'success');
       } else {
         await financeiroService.adicionarCategoria({
-          barbearia_id: profile.barbearia_id, 
-          nome: novaCatNome, 
-          tipo: novaCatTipo
+          barbearia_id: profile.barbearia_id,
+          nome: novaCatNome,
+          tipo: tipoStr
+        });
+        await auditLogService.registrar({
+          barbeariaId: profile.barbearia_id,
+          usuarioId: profile.id,
+          usuarioNome: profile.nome,
+          modulo: 'financeiro',
+          acao: 'criar',
+          descricao: `Categoria "${novaCatNome}" criada`,
         });
         showAlert('Sucesso', 'Nova categoria criada!', 'success');
       }
       fecharFormularioCategoria();
       carregarPainelFinanceiro();
     } catch (err) {
-      showAlert('Erro', err.message, 'error');
+      const msg = err.message || '';
+      if (msg.includes('row-level security') || msg.includes('violates row-level security')) {
+        showAlert(
+          'Permissão negada no banco',
+          'A tabela de categorias precisa das políticas RLS no Supabase. Aplique o arquivo supabase/migrations/20260722183000_categorias_rls.sql no painel SQL do Supabase.',
+          'error'
+        );
+      } else {
+        showAlert('Erro', msg, 'error');
+      }
     }
   };
 
   const abrirEdicaoCategoria = (cat) => {
     setEditingCategoria(cat);
     setNovaCatNome(cat.nome);
-    setNovaCatTipo(cat.tipo);
+    setNovaCatTipos(parseTiposCategoria(cat.tipo));
   };
 
   const fecharFormularioCategoria = () => {
     setEditingCategoria(null);
     setNovaCatNome('');
-    setNovaCatTipo('');
+    setNovaCatTipos([]);
   };
 
   const handleVerificarDelecaoCategoria = async (cat) => {
@@ -423,7 +464,7 @@ export default function AdminFinanceiro() {
                       <>
                         <option value="servico">Serviço de Corte/Barba</option>
                         <option value="produto">Venda de Produto</option>
-                        {categoriasCustom.filter(c => c.tipo === 'entrada').map(c => <option key={c.id} value={c.nome}>{c.nome}</option>)}
+                        {categoriasCustom.filter(c => parseTiposCategoria(c.tipo).includes('entrada')).map(c => <option key={c.id} value={c.nome}>{c.nome}</option>)}
                         <option value="outros">Outras Receitas</option>
                       </>
                     ) : (
@@ -432,7 +473,7 @@ export default function AdminFinanceiro() {
                         <option value="vale_funcionario">Vale / Adiantamento de Profissional</option>
                         <option value="pagamento_equipe">Folha de Pagamento Completa</option>
                         <option value="produto">Reposição de Estoque</option>
-                        {categoriasCustom.filter(c => c.tipo === 'saida').map(c => <option key={c.id} value={c.nome}>{c.nome}</option>)}
+                        {categoriasCustom.filter(c => parseTiposCategoria(c.tipo).includes('saida')).map(c => <option key={c.id} value={c.nome}>{c.nome}</option>)}
                         <option value="outros">Outros Custos</option>
                       </>
                     )}
@@ -607,11 +648,27 @@ export default function AdminFinanceiro() {
               </div>
               <div>
                 <label className="block text-xs font-bold text-text-muted uppercase mb-1">Destinação *</label>
-                <select required value={novaCatTipo} onChange={(e) => setNovaCatTipo(e.target.value)} className="w-full rounded-xl bg-background border border-border-line p-3 text-sm outline-none text-text-base cursor-pointer focus:border-brand">
-                  <option value="" disabled>Selecione...</option>
-                  <option value="saida">Saída (Custos/Despesas)</option>
-                  <option value="entrada">Entrada (Receitas/Faturamento)</option>
-                </select>
+                <p className="text-[10px] text-text-muted mb-2">Selecione uma ou ambas: Entrada e/ou Saída.</p>
+                <div className="flex flex-wrap gap-3">
+                  <label className="flex items-center gap-2 bg-background border border-border-line px-4 py-3 rounded-xl cursor-pointer hover:border-brand">
+                    <input
+                      type="checkbox"
+                      checked={novaCatTipos.includes('entrada')}
+                      onChange={() => setNovaCatTipos((prev) => toggleTipoLista(prev, 'entrada'))}
+                      className="accent-brand"
+                    />
+                    <span className="text-sm font-bold text-green-600">Entrada (Receitas)</span>
+                  </label>
+                  <label className="flex items-center gap-2 bg-background border border-border-line px-4 py-3 rounded-xl cursor-pointer hover:border-brand">
+                    <input
+                      type="checkbox"
+                      checked={novaCatTipos.includes('saida')}
+                      onChange={() => setNovaCatTipos((prev) => toggleTipoLista(prev, 'saida'))}
+                      className="accent-brand"
+                    />
+                    <span className="text-sm font-bold text-red-500">Saída (Despesas)</span>
+                  </label>
+                </div>
               </div>
               <button type="submit" className="w-full bg-brand hover:bg-brand-hover text-white font-bold py-3.5 mt-2 rounded-xl text-sm transition-all shadow-md cursor-pointer">
                 {editingCategoria ? 'Salvar Edição' : 'Criar Nova Categoria'}
@@ -635,7 +692,11 @@ export default function AdminFinanceiro() {
                   <li key={c.id} className="p-5 flex justify-between items-center hover:bg-background/50 transition-colors group">
                     <span className="font-bold text-sm text-text-base">{c.nome}</span>
                     <div className="flex items-center gap-4">
-                      <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider ${c.tipo === 'entrada' ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-500'}`}>{c.tipo}</span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {parseTiposCategoria(c.tipo).map((t) => (
+                        <span key={t} className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider ${t === 'entrada' ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-500'}`}>{t}</span>
+                      ))}
+                    </div>
                       <div className="flex items-center gap-1">
                         <button onClick={() => abrirEdicaoCategoria(c)} className="text-text-muted hover:text-brand p-2 rounded-lg hover:bg-background border border-transparent hover:border-border-line transition-all cursor-pointer md:opacity-0 group-hover:opacity-100">
                           <Edit2 size={16}/>
@@ -704,7 +765,7 @@ export default function AdminFinanceiro() {
                       <>
                         <option value="servico">Serviço de Corte/Barba</option>
                         <option value="produto">Venda de Produto</option>
-                        {categoriasCustom.filter(c => c.tipo === 'entrada' && c.id !== migrationModal.oldCat?.id).map(c => <option key={c.id} value={c.nome}>{c.nome}</option>)}
+                        {categoriasCustom.filter(c => parseTiposCategoria(c.tipo).includes('entrada') && c.id !== migrationModal.oldCat?.id).map(c => <option key={c.id} value={c.nome}>{c.nome}</option>)}
                         <option value="outros">Outras Receitas</option>
                       </>
                     ) : (
@@ -713,7 +774,7 @@ export default function AdminFinanceiro() {
                         <option value="vale_funcionario">Vale / Adiantamento</option>
                         <option value="pagamento_equipe">Folha de Pagamento</option>
                         <option value="produto">Reposição de Estoque</option>
-                        {categoriasCustom.filter(c => c.tipo === 'saida' && c.id !== migrationModal.oldCat?.id).map(c => <option key={c.id} value={c.nome}>{c.nome}</option>)}
+                        {categoriasCustom.filter(c => parseTiposCategoria(c.tipo).includes('saida') && c.id !== migrationModal.oldCat?.id).map(c => <option key={c.id} value={c.nome}>{c.nome}</option>)}
                         <option value="outros">Outros Custos</option>
                       </>
                     )}
@@ -729,6 +790,8 @@ export default function AdminFinanceiro() {
           </div>
         </div>
       )}
+
+      <HistoricoMudancas barbeariaId={profile?.barbearia_id} modulo="financeiro" />
 
     </div>
   );

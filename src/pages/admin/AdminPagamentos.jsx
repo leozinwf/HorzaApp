@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabaseClient';
 import { CreditCard, Wallet, QrCode, CheckCircle2, AlertCircle, Link as LinkIcon, ExternalLink } from 'lucide-react';
 
 export default function AdminPagamentos() {
+  const { slug } = useParams();
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
@@ -41,29 +43,31 @@ export default function AdminPagamentos() {
     }
   };
 
-  const conectarStripe = async () => {
-    // Se já estiver conectado, podemos adicionar lógica para desconectar depois
+  const conectarStripe = () => {
     if (dadosPagamento.gateway_pagamento === 'stripe') {
       alert('A funcionalidade de desconectar pode ser feita diretamente no painel da Stripe.');
       return;
     }
 
     setSalvando(true);
-    
-    // 1. O teu Client ID da Stripe (Encontras no Painel Stripe > Definições > Connect)
-    const clientId = 'org_6UwAv1Cg9PgXfMjbNSqb6NU'; 
-    
-    // 2. Para onde a Stripe deve devolver o utilizador após o login (vamos criar esta página já a seguir)
-    // Se estiveres a testar no computador, usa o localhost:
-    const redirectUri = window.location.origin + '/admin/pagamentos/callback';
-    
-    // 3. Passamos o ID da barbearia no "state" para sabermos quem é quando a Stripe devolver a resposta
-    const state = profile.barbearia_id; 
 
-    // 4. Montar o URL e redirecionar o dono da barbearia para a Stripe
-    const stripeAuthUrl = `https://connect.stripe.com/oauth/authorize?response_type=code&client_id=${clientId}&scope=read_write&state=${state}&redirect_uri=${redirectUri}`;
-    
+    const clientId = import.meta.env.VITE_STRIPE_CLIENT_ID || 'org_6UwAv1Cg9PgXfMjbNSqb6NU';
+    const redirectUri = `${window.location.origin}/${slug}/admin/pagamentos/callback`;
+    const state = profile.barbearia_id;
+    const stripeAuthUrl = `https://connect.stripe.com/oauth/authorize?response_type=code&client_id=${clientId}&scope=read_write&state=${state}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+
     window.location.href = stripeAuthUrl;
+  };
+
+  const atualizarGateway = (gateway) => {
+    if (gateway === 'stripe') {
+      conectarStripe();
+      return;
+    }
+
+    if (gateway === 'mercadopago') {
+      alert('Integração com Mercado Pago em breve.');
+    }
   };
 
   const salvarChavePix = async () => {

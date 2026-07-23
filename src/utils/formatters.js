@@ -35,3 +35,26 @@ export const formatarWhatsapp = (valor) => {
   }
   return v;
 };
+
+export const TIMEZONE_BR = 'America/Sao_Paulo';
+
+export const getHojeFormatoHTML = () =>
+  new Date().toLocaleDateString('en-CA', { timeZone: TIMEZONE_BR });
+
+export const getDayBoundsISO = (dateStr) => ({
+  inicio: new Date(`${dateStr}T00:00:00-03:00`).toISOString(),
+  fim: new Date(`${dateStr}T23:59:59-03:00`).toISOString(),
+});
+
+export const dateTimeToISO = (dateStr, timeStr) =>
+  new Date(`${dateStr}T${timeStr}:00-03:00`).toISOString();
+
+export const formatarMoedaBRL = (valor) =>
+  Number(valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+export const parseMoedaBRL = (valorString) => {
+  if (valorString == null || valorString === '') return 0;
+  if (typeof valorString === 'number') return valorString;
+  const limpo = String(valorString).replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
+  return parseFloat(limpo) || 0;
+};

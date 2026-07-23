@@ -1,69 +1,49 @@
 @import "tailwindcss";
 
-@theme {
-  --color-brand: #c89b3c;
-
-  --color-background: #f5f2eb;
-  --color-surface: #ffffff;
-  --color-surface-secondary: #ebe4d7;
-
-  --color-text-base: #2b241b;
-  --color-text-muted: #6b6257;
-
-  --color-border-line: #d9d0c2;
-}
-
-@layer utilities {
-  .bg-menu {
-    background-color: var(--menu-background);
-  }
-}
-
 @variant dark (&:where(.dark, .dark *));
 
 :root {
-  /* Backgrounds */
   --background: #f5f2eb;
   --surface: #ffffff;
-  --surface-secondary: #f5f2eb;
+  --surface-secondary: #ebe4d7;
   --menu-background: #f5f2eb;
-
-  /* Text */
   --text-base: #2b241b;
   --text-muted: #6b6257;
-
-  /* Borders */
   --border-line: #d9d0c2;
-
-  /* Accent */
---brand: #B8924A;
-
-  /* Status */
-  --success: #3fa76f;
-  --danger: #d45b5b;
-  --warning: #c89b3c;
+  --brand: #b8924a;
+  --brand-hover: #9a7838;
+  --input-bg: #ffffff;
+  --knob: #ffffff;
+  --success-text: #2d8a58;
+  --danger-text: #c04444;
+  --warning-text: #a67c2e;
 }
 
 .dark {
-  /* Backgrounds */
-  --background: #151311;
-  --surface: #211d19;
-  --surface-secondary: #2d2722;
-  --menu-background: #1d1916;
-
-  /* Text */
+  --background: #0f0e0c;
+  --surface: #1a1714;
+  --surface-secondary: #242018;
+  --menu-background: #141210;
   --text-base: #f5f1ea;
-  --text-muted: #b8aa99;
+  --text-muted: #a89882;
+  --border-line: #3d362e;
+  --brand: #d4af61;
+  --brand-hover: #e0bd72;
+  --input-bg: #211d19;
+  --knob: #f5f1ea;
+  --success-text: #86efac;
+  --danger-text: #fca5a5;
+  --warning-text: #fcd34d;
+}
 
-  /* Borders */
-  --border-line: #3b342d;
-
-  /* Accent */
---brand: #B8924A;
-  /* Status */
-  --success: #57c087;
-  --danger: #ef7a7a;
-  --warning: #d8b25a;
+@theme {
+  --color-brand: var(--brand);
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-secondary: var(--surface-secondary);
+  --color-text-base: var(--text-base);
+  --color-text-muted: var(--text-muted);
+  --color-border-line: var(--border-line);
 }
 
 html {
@@ -71,23 +51,34 @@ html {
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--text-base);
-  transition: .25s ease;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 @layer utilities {
+  .bg-menu {
+    background-color: var(--menu-background);
+  }
 
   .bg-background {
-    background: var(--background);
+    background-color: var(--background);
   }
 
   .bg-surface {
-    background: var(--surface);
+    background-color: var(--surface);
   }
 
   .bg-surface-secondary {
-    background: var(--surface-secondary);
+    background-color: var(--surface-secondary);
+  }
+
+  .bg-input {
+    background-color: var(--input-bg);
+  }
+
+  .bg-knob {
+    background-color: var(--knob);
   }
 
   .text-text-base {
@@ -98,12 +89,29 @@ body {
     color: var(--text-muted);
   }
 
+  .text-success {
+    color: var(--success-text);
+  }
+
+  .text-danger {
+    color: var(--danger-text);
+  }
+
+  .text-warning {
+    color: var(--warning-text);
+  }
+
   .border-border-line {
     border-color: var(--border-line);
   }
 
   .bg-brand {
-    background: var(--brand);
+    background-color: var(--brand);
+  }
+
+  .bg-brand-hover,
+  .hover\:bg-brand-hover:hover {
+    background-color: var(--brand-hover);
   }
 
   .text-brand {
@@ -113,4 +121,63 @@ body {
   .border-brand {
     border-color: var(--brand);
   }
+
+  .ring-brand {
+    --tw-ring-color: var(--brand);
+  }
+}
+
+/* Compatibilidade dark mode — classes Tailwind fixas usadas no app */
+.dark .bg-white {
+  background-color: var(--surface);
+}
+
+.dark .bg-white\/20 {
+  background-color: color-mix(in srgb, var(--surface) 20%, transparent);
+}
+
+.dark .text-green-600,
+.dark .text-green-500 {
+  color: var(--success-text);
+}
+
+.dark .text-red-600,
+.dark .text-red-500 {
+  color: var(--danger-text);
+}
+
+.dark .text-amber-600,
+.dark .text-amber-500 {
+  color: var(--warning-text);
+}
+
+.dark .text-emerald-600 {
+  color: #6ee7b7;
+}
+
+.dark .text-blue-600 {
+  color: #93c5fd;
+}
+
+.dark .text-pink-500 {
+  color: #f9a8d4;
+}
+
+.dark .hover\:text-amber-600:hover {
+  color: var(--warning-text);
+}
+
+.dark .hover\:bg-red-50:hover {
+  background-color: color-mix(in srgb, var(--danger-text) 12%, transparent);
+}
+
+.dark input,
+.dark select,
+.dark textarea {
+  color-scheme: dark;
+}
+
+.dark ::placeholder {
+  color: var(--text-muted);
+  opacity: 0.85;
 }
