@@ -2,6 +2,7 @@ import { useState } from 'react';
 import toast from 'react-hot-toast';
 import { Megaphone, Send, Users, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useOutletContext } from 'react-router-dom';
 import ProSection from '../../components/shared/ProSection';
 import { FEATURE_KEYS } from '../../constants/planFeatures';
 import { sendBarbershopNotification } from '../../services/notificationService';
@@ -14,6 +15,7 @@ const TIPOS = [
 
 export default function AdminComunicados() {
   const { profile } = useAuth();
+  const { adminBarbeariaId } = useOutletContext();
   const [titulo, setTitulo] = useState('');
   const [mensagem, setMensagem] = useState('');
   const [tipo, setTipo] = useState('barbearia');
@@ -21,12 +23,12 @@ export default function AdminComunicados() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!profile?.barbearia_id) return;
+    if (!adminBarbeariaId) return;
 
     setEnviando(true);
     try {
       const count = await sendBarbershopNotification({
-        barbeariaId: profile.barbearia_id,
+        barbeariaId: adminBarbeariaId,
         titulo,
         mensagem,
         tipo,

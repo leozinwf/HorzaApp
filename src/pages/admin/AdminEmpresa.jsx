@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useOutletContext } from 'react-router-dom';
 import { useModal } from '../../context/ModalContext'; // ✨ Importando o novo Hook
 import { supabase } from '../../services/supabaseClient';
 import { uploadImagemBarbearia } from '../../utils/uploadBarbearia';
-import { Building2, Save, MapPin, Clock, FileText, Phone, AtSign, Image } from 'lucide-react';
+import { Building2, Save, MapPin, Clock, FileText, Phone, AtSign, Image, Car } from 'lucide-react';
 import ProSection from '../../components/shared/ProSection';
 import PersonalizacaoMarcaPanel from '../../components/admin/PersonalizacaoMarcaPanel';
 import QrCodeCadeiraPanel from '../../components/admin/QrCodeCadeiraPanel';
@@ -11,6 +12,7 @@ import { FEATURE_KEYS } from '../../constants/planFeatures';
 
 export default function AdminEmpresa() {
     const { profile } = useAuth();
+    const { adminBarbeariaId } = useOutletContext();
     const { showAlert } = useModal(); // ✨ Iniciando o disparador de alertas
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -38,6 +40,7 @@ export default function AdminEmpresa() {
     const [horaAbertura, setHoraAbertura] = useState('09:00');
     const [horaFechamento, setHoraFechamento] = useState('19:00');
     const [diasFuncionamento, setDiasFuncionamento] = useState([1, 2, 3, 4, 5, 6]);
+    const [temEstacionamento, setTemEstacionamento] = useState(false);
     const [logoUrl, setLogoUrl] = useState('');
     const [capaUrl, setCapaUrl] = useState('');
     const [corPrimaria, setCorPrimaria] = useState('#b8924a');
@@ -51,13 +54,13 @@ export default function AdminEmpresa() {
     ];
 
     useEffect(() => {
-        if (profile?.barbearia_id) buscarDadosEmpresa();
-    }, [profile]);
+        if (adminBarbeariaId) buscarDadosEmpresa();
+    }, [adminBarbeariaId]);
 
     const buscarDadosEmpresa = async () => {
         setLoading(true);
         try {
-            const { data, error } = await supabase.from('barbearias').select('*').eq('id', profile.barbearia_id).single();
+            const { data, error } = await supabase.from('barbearias').select('*').eq('id', adminBarbeariaId).single();
             if (error) throw error;
             if (data) {
                 setNome(data.nome || '');
@@ -78,6 +81,7 @@ export default function AdminEmpresa() {
                 if (data.hora_abertura) setHoraAbertura(data.hora_abertura.substring(0, 5));
                 if (data.hora_fechamento) setHoraFechamento(data.hora_fechamento.substring(0, 5));
                 if (data.dias_funcionamento) setDiasFuncionamento(data.dias_funcionamento);
+                setTemEstacionamento(Boolean(data.tem_estacionamento));
                 if (data.logo_url) setLogoUrl(data.logo_url);
                 if (data.capa_url) setCapaUrl(data.capa_url);
                 if (data.cor_primaria) setCorPrimaria(data.cor_primaria);
@@ -119,7 +123,7 @@ export default function AdminEmpresa() {
         if (!file) return;
         setEnviandoLogo(true);
         try {
-            const url = await uploadImagemBarbearia(profile.barbearia_id, file, 'logo');
+            const url = await uploadImagemBarbearia(adminBarbeariaId, file, 'logo');
             setLogoUrl(url);
             showAlert('Foto enviada', 'Clique em Guardar para publicar na listagem do app.', 'success');
         } catch {
@@ -134,7 +138,7 @@ export default function AdminEmpresa() {
         if (!file) return;
         setEnviandoCapa(true);
         try {
-            const url = await uploadImagemBarbearia(profile.barbearia_id, file, 'capa');
+            const url = await uploadImagemBarbearia(adminBarbeariaId, file, 'capa');
             setCapaUrl(url);
             showAlert('Capa enviada', 'Clique em Guardar para publicar na página da barbearia.', 'success');
         } catch {
@@ -152,10 +156,11 @@ export default function AdminEmpresa() {
                 nome, razao_social: razaoSocial, cnpj, telefone, cep, rua, numero, bairro, cidade, estado,
                 chave_pix: chavePix, gateway_pagamento: gateway, redes_sociais: { instagram },
                 hora_abertura: `${horaAbertura}:00`, hora_fechamento: `${horaFechamento}:00`, dias_funcionamento: diasFuncionamento,
+                tem_estacionamento: temEstacionamento,
                 logo_url: logoUrl || null,
                 capa_url: capaUrl || null,
                 cor_primaria: corPrimaria || null,
-            }).eq('id', profile.barbearia_id);
+            }).eq('id', adminBarbeariaId);
 
             if (error) throw error;
             // ✨ ALERTA ELEGANTE DE SUCESSO AQUI ✨
@@ -316,6 +321,23 @@ export default function AdminEmpresa() {
                             <input type="time" value={horaFechamento} onChange={(e) => setHoraFechamento(e.target.value)} className="w-full rounded-xl bg-background border border-border-line p-3 text-sm focus:border-brand outline-none" />
                         </div>
                     </div>
+
+                    <label className="mt-6 flex items-start gap-3 p-4 rounded-xl border border-border-line bg-background cursor-pointer hover:border-brand/40 transition-colors">
+                        <input
+                            type="checkbox"
+                            checked={temEstacionamento}
+                            onChange={(e) => setTemEstacionamento(e.target.checked)}
+                            className="mt-1 accent-brand"
+                        />
+                        <span>
+                            <span className="flex items-center gap-2 text-sm font-bold text-text-base">
+                                <Car size={16} className="text-brand" /> Estacionamento disponível
+                            </span>
+                            <span className="block text-xs text-text-muted mt-1">
+                                Clientes poderão encontrar sua barbearia pelo filtro de estacionamento no marketplace.
+                            </span>
+                        </span>
+                    </label>
                 </div>
 
                 <ProSection

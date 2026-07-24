@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { Shield, Users, CalendarCheck, TrendingUp, Edit, ExternalLink, X, MapPin, Building2, Crown, Search, CheckCircle, Ban, Filter, Trash2, Settings, Plus, UserPlus, Image, Headphones, Eye, Coins, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useModal } from '../../context/ModalContext';
 import toast from 'react-hot-toast';
 import { MASTER_ASSIGNABLE_ROLES, getRoleLabel } from '../../constants/roles';
 import { masterSetTenantPlan, ensureFreeSubscription } from '../../services/planService';
@@ -14,6 +15,7 @@ import { MASTER_MENU_ITEMS, MASTER_GROUP_ORDER } from '../../constants/masterMod
 import MasterSuporteSection from '../../components/support/MasterSuporteSection';
 import MasterDashboardSection from '../../components/master/MasterDashboardSection';
 import MasterPlanosSection from '../../components/master/MasterPlanosSection';
+import MasterBannersSection from '../../components/master/MasterBannersSection';
 import MasterEmpresaQuickModal from '../../components/master/MasterEmpresaQuickModal';
 import MasterMoedasModal from '../../components/master/MasterMoedasModal';
 
@@ -23,6 +25,7 @@ const CAMPOS_EMPRESA_SALVAR = [
 ];
 
 export default function DashboardMaster() {
+  const { showConfirm } = useModal();
   const [abaAtiva, setAbaAtiva] = useState('dashboard');
   const [menuSheetAberto, setMenuSheetAberto] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -78,8 +81,8 @@ export default function DashboardMaster() {
   const carregarDados = async () => {
     setLoading(true);
 
-    // Carrega Barbearias
-    const { data: bData } = await supabase.from('barbearias').select('*, usuarios(count), agendamentos(count)').order('criado_em', { ascending: false });
+    // Carrega Barbearias (Limitado a 500 para evitar travamentos)
+    const { data: bData } = await supabase.from('barbearias').select('*, usuarios(count), agendamentos(count)').order('criado_em', { ascending: false }).limit(500);
     if (bData) {
       let empresasComPlano = bData;
       const ids = bData.map((b) => b.id);
@@ -104,8 +107,8 @@ export default function DashboardMaster() {
       });
     }
 
-    // Carrega Usuários
-    const { data: uData } = await supabase.from('usuarios').select('*').order('criado_em', { ascending: false });
+    // Carrega Usuários (Limitado a 500 mais recentes)
+    const { data: uData } = await supabase.from('usuarios').select('*').order('criado_em', { ascending: false }).limit(500);
     if (uData) setUsuarios(uData);
 
     try {
@@ -140,30 +143,32 @@ export default function DashboardMaster() {
 
   // ----- Ações de Barbearia -----
   const aprovarBarbearia = async (id) => {
-    if(!window.confirm("Aprovar essa barbearia?")) return;
-    const { error } = await supabase.from('barbearias').update({ status: 'aprovada' }).eq('id', id);
-    if (error) {
-      toast.error('Erro ao aprovar barbearia.');
-      return;
-    }
-    try {
-      await ensureFreeSubscription(id);
-    } catch (err) {
-      console.warn('Subscription free:', err);
-    }
-    toast.success('Barbearia aprovada com sucesso!');
-    carregarDados();
+    showConfirm('Aprovar', 'Aprovar essa barbearia?', async () => {
+      const { error } = await supabase.from('barbearias').update({ status: 'aprovada' }).eq('id', id);
+      if (error) {
+        toast.error('Erro ao aprovar barbearia.');
+        return;
+      }
+      try {
+        await ensureFreeSubscription(id);
+      } catch (err) {
+        console.warn('Subscription free:', err);
+      }
+      toast.success('Barbearia aprovada com sucesso!');
+      carregarDados();
+    });
   };
 
   const recusarBarbearia = async (id) => {
-    if(!window.confirm("Isso irá apagar a barbearia. Tem certeza?")) return;
-    const { error } = await supabase.from('barbearias').delete().eq('id', id);
-    if (error) {
-      toast.error('Erro ao recusar barbearia.');
-      return;
-    }
-    toast.success('Barbearia recusada/apagada.');
-    carregarDados();
+    showConfirm('Recusar', 'Isso irá apagar a barbearia. Tem certeza?', async () => {
+      const { error } = await supabase.from('barbearias').delete().eq('id', id);
+      if (error) {
+        toast.error('Erro ao recusar barbearia.');
+        return;
+      }
+      toast.success('Barbearia recusada/apagada.');
+      carregarDados();
+    });
   };
 
   const alterarPlanoEmpresa = async (id, planSlug) => {
@@ -180,14 +185,15 @@ export default function DashboardMaster() {
   };
 
   const toggleBanirUsuario = async (id, ativo) => {
-    if (!window.confirm(`Deseja ${ativo ? 'BANIR' : 'DESBANIR'} este usuário?`)) return;
-    const { error } = await supabase.from('usuarios').update({ ativo: !ativo }).eq('id', id);
-    if (error) {
-      toast.error('Erro ao atualizar status do usuário.');
-      return;
-    }
-    toast.success(`Usuário ${ativo ? 'banido' : 'desbanido'} com sucesso!`);
-    carregarDados();
+    showConfirm('Alterar status', `Deseja ${ativo ? 'BANIR' : 'DESBANIR'} este usuário?`, async () => {
+      const { error } = await supabase.from('usuarios').update({ ativo: !ativo }).eq('id', id);
+      if (error) {
+        toast.error('Erro ao atualizar status do usuário.');
+        return;
+      }
+      toast.success(`Usuário ${ativo ? 'banido' : 'desbanido'} com sucesso!`);
+      carregarDados();
+    });
   };
 
   const abrirModalDeletarUsuario = (usuario) => {
@@ -202,11 +208,14 @@ export default function DashboardMaster() {
     try {
       if (comHistorico) {
         // Excluir todos os agendamentos onde ele é cliente ou barbeiro
-        await supabase.from('agendamentos').delete().or(`cliente_id.eq.${usuarioParaDeletar.id},barbeiro_id.eq.${usuarioParaDeletar.id}`);
+        const { error: err1 } = await supabase.from('agendamentos').delete().or(`cliente_id.eq.${usuarioParaDeletar.id},barbeiro_id.eq.${usuarioParaDeletar.id}`);
+        if (err1) throw err1;
       } else {
         // Desvincular agendamentos para manter o histórico (caso o banco permita null)
-        await supabase.from('agendamentos').update({ cliente_id: null }).eq('cliente_id', usuarioParaDeletar.id);
-        await supabase.from('agendamentos').update({ barbeiro_id: null }).eq('barbeiro_id', usuarioParaDeletar.id);
+        const { error: err2 } = await supabase.from('agendamentos').update({ cliente_id: null }).eq('cliente_id', usuarioParaDeletar.id);
+        if (err2) throw err2;
+        const { error: err3 } = await supabase.from('agendamentos').update({ barbeiro_id: null }).eq('barbeiro_id', usuarioParaDeletar.id);
+        if (err3) throw err3;
       }
       
       // Excluir o usuário da tabela 'usuarios'
@@ -733,6 +742,8 @@ export default function DashboardMaster() {
             )}
 
             {abaAtiva === 'suporte' && <MasterSuporteSection />}
+
+            {abaAtiva === 'banners' && <MasterBannersSection />}
 
             {/* ==================== ABA PLANOS PREMIUM ==================== */}
             {abaAtiva === 'planos' && (

@@ -52,26 +52,28 @@ export default function HomeCliente({ onOpenLogin }) {
     try {
       let { data, error } = await supabase
         .from('barbearias')
-        .select('id, nome, slug, rua, numero, bairro, cidade, estado, cep, telefone, hora_abertura, hora_fechamento, dias_funcionamento, latitude, longitude, widgets, redes_sociais, logo_url, capa_url, cor_primaria')
+        .select('id, nome, slug, rua, numero, bairro, cidade, estado, cep, telefone, hora_abertura, hora_fechamento, dias_funcionamento, latitude, longitude, widgets, redes_sociais, logo_url, capa_url, cor_primaria, status')
         .eq('slug', slug)
         .maybeSingle();
 
       if (error && error.code === '42703') {
         const fallback = await supabase
           .from('barbearias')
-          .select('id, nome, slug, rua, numero, bairro, cidade, estado, cep, telefone, hora_abertura, hora_fechamento, dias_funcionamento, latitude, longitude, logo_url, capa_url')
+          .select('id, nome, slug, rua, numero, bairro, cidade, estado, cep, telefone, hora_abertura, hora_fechamento, dias_funcionamento, latitude, longitude, logo_url, capa_url, status')
           .eq('slug', slug)
           .maybeSingle();
         data = fallback.data;
       }
 
-      if (data) {
+      if (data && data.status === 'aprovada') {
         setBarbeariaInfo(data);
         sessionStorage.setItem(cacheKey(slug), JSON.stringify(data));
         if (data.cor_primaria) {
           document.documentElement.style.setProperty('--brand', data.cor_primaria);
           document.documentElement.style.setProperty('--color-brand', data.cor_primaria);
         }
+      } else {
+        setBarbeariaInfo(null);
       }
     } catch (err) {
       console.error('Erro ao buscar barbearia:', err);
@@ -100,6 +102,21 @@ export default function HomeCliente({ onOpenLogin }) {
     const nomes = { 0: 'Dom', 1: 'Seg', 2: 'Ter', 3: 'Qua', 4: 'Qui', 5: 'Sex', 6: 'Sáb' };
     return diasArray.map((d) => nomes[d]).filter(Boolean).join(', ');
   };
+
+  if (!carregandoBarbearia && !barbeariaInfo) {
+    return (
+      <div className="flex flex-col h-screen items-center justify-center bg-background p-4 text-center">
+        <h1 className="text-xl font-black text-text-base mb-2">Barbearia não encontrada</h1>
+        <p className="text-sm text-text-muted mb-6">A página que você tentou acessar não existe ou foi desativada.</p>
+        <button
+          onClick={() => navigate('/')}
+          className="bg-brand text-white px-6 py-3 rounded-xl font-bold hover:brightness-110"
+        >
+          Voltar ao início
+        </button>
+      </div>
+    );
+  }
 
   if (carregandoBarbearia && !barbeariaInfo) {
     return (
@@ -248,7 +265,7 @@ export default function HomeCliente({ onOpenLogin }) {
                 </h3>
                 {barbeariaInfo.widgets.map((widget, idx) => (
                   <div key={idx} className="bg-surface border border-border-line rounded-2xl p-5 text-sm">
-                    {widget.type === 'texto' && <div dangerouslySetInnerHTML={{ __html: widget.content }} />}
+                    {widget.type === 'texto' && <div className="whitespace-pre-wrap">{widget.content}</div>}
                     {widget.type === 'social' && (
                       <a href={widget.content} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 font-bold">
                         <AtSign className="text-pink-500" /> Redes sociais

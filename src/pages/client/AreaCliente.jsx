@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
+import { useModal } from '../../context/ModalContext';
 import {
   User, Calendar, Scissors, Clock,
   CheckCircle2, AlertCircle, XCircle, Coins, Gift, Ticket,
@@ -13,6 +14,7 @@ import ClienteSuporteSection from '../../components/support/ClienteSuporteSectio
 
 export default function AreaCliente() {
   const { user, profile } = useAuth();
+  const { showConfirm, showAlert } = useModal();
   const [openSections, setOpenSections] = useState({
     fidelidade: true,
     historico: false,
@@ -167,29 +169,36 @@ function ClubeFidelidade({ user, profile }) {
   };
 
   const resgatarPremio = async (recompensa) => {
-    if (saldoAtual < recompensa.pontos_necessarios) return alert('Você não tem moedas suficientes para este prêmio.');
-    if (!window.confirm(`Deseja gastar ${recompensa.pontos_necessarios} moedas para resgatar "${recompensa.titulo}"?`)) return;
-    setResgatando(true);
-    try {
-      const codigoGerado = Math.random().toString(36).substring(2, 8).toUpperCase();
-      const { data: sucesso, error } = await supabase.rpc('gerar_codigo_resgate', {
-        p_cliente_id: user.id,
-        p_barbearia_id: recompensa.barbearia_id,
-        p_recompensa_id: recompensa.id,
-        p_recompensa_nome: recompensa.titulo,
-        p_custo: recompensa.pontos_necessarios,
-        p_codigo: codigoGerado,
-      });
-      if (error) throw error;
-      if (sucesso) {
-        alert('Prêmio resgatado! Mostre o código no balcão da barbearia.');
-        await carregarFidelidade(false);
-      } else alert('Saldo insuficiente ou erro ao processar.');
-    } catch (err) {
-      alert('Erro ao resgatar o prêmio: ' + err.message);
-    } finally {
-      setResgatando(false);
+    if (saldoAtual < recompensa.pontos_necessarios) {
+      showAlert('Atenção', 'Você não tem moedas suficientes para este prêmio.', 'info');
+      return;
     }
+
+    showConfirm('Resgatar prêmio', `Deseja gastar ${recompensa.pontos_necessarios} moedas para resgatar "${recompensa.titulo}"?`, async () => {
+      setResgatando(true);
+      try {
+        const codigoGerado = Math.random().toString(36).substring(2, 8).toUpperCase();
+        const { data: sucesso, error } = await supabase.rpc('gerar_codigo_resgate', {
+          p_cliente_id: user.id,
+          p_barbearia_id: recompensa.barbearia_id,
+          p_recompensa_id: recompensa.id,
+          p_recompensa_nome: recompensa.titulo,
+          p_custo: recompensa.pontos_necessarios,
+          p_codigo: codigoGerado,
+        });
+        if (error) throw error;
+        if (sucesso) {
+          showAlert('Prêmio resgatado!', 'Mostre o código no balcão da barbearia.', 'success');
+          await carregarFidelidade(false);
+        } else {
+          showAlert('Erro', 'Saldo insuficiente ou erro ao processar.', 'error');
+        }
+      } catch (err) {
+        showAlert('Erro', 'Erro ao resgatar o prêmio: ' + err.message, 'error');
+      } finally {
+        setResgatando(false);
+      }
+    });
   };
 
   if (loading) {

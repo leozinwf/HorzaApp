@@ -232,13 +232,14 @@ export default function AdminLayout() {
         location={location}
         menuSheetAberto={menuSheetAberto}
         setMenuSheetAberto={setMenuSheetAberto}
+        dadosEmpresa={dadosEmpresa}
         />
       </div>
     </PlanProvider>
   );
 }
 
-function AdminPanelContent({ slug, location, menuSheetAberto, setMenuSheetAberto }) {
+function AdminPanelContent({ slug, location, menuSheetAberto, setMenuSheetAberto, dadosEmpresa }) {
   return (
     <AdminNavShell
       slug={slug}
@@ -248,7 +249,7 @@ function AdminPanelContent({ slug, location, menuSheetAberto, setMenuSheetAberto
     >
       <div className="animate-fadeIn px-4 md:px-8 max-w-6xl mx-auto w-full mt-4 md:mt-6 relative z-0 flex-1 pb-8 md:pb-10">
         <PlanUsageBanner />
-        <Outlet />
+        <Outlet context={{ adminBarbeariaId: dadosEmpresa.id, barbeariaInfo: dadosEmpresa }} />
       </div>
     </AdminNavShell>
   );

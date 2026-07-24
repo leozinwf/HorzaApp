@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useModal } from '../../context/ModalContext';
 import { useNavigate, Link } from 'react-router-dom';
-import { Store, User, Phone, Mail, Lock, Check, MapPin, Building, Clock, Eye, EyeOff } from 'lucide-react';
+import { Store, User, Phone, Mail, Lock, Check, MapPin, Building, Clock, Eye, EyeOff, Car } from 'lucide-react';
 
 const DIAS_SEMANA = [
   { id: 0, nome: 'Dom' }, { id: 1, nome: 'Seg' }, { id: 2, nome: 'Ter' },
@@ -57,6 +57,7 @@ export default function CadastroBarbearia() {
   const [horaAbertura, setHoraAbertura] = useState('09:00');
   const [horaFechamento, setHoraFechamento] = useState('19:00');
   const [diasFuncionamento, setDiasFuncionamento] = useState([1, 2, 3, 4, 5, 6]);
+  const [temEstacionamento, setTemEstacionamento] = useState(false);
 
   // Estados - Dados da Empresa
   const [nomeBarbearia, setNomeBarbearia] = useState('');
@@ -204,6 +205,7 @@ export default function CadastroBarbearia() {
         hora_abertura: horaAbertura,
         hora_fechamento: horaFechamento,
         dias_funcionamento: diasFuncionamento,
+        tem_estacionamento: temEstacionamento,
       }]).select('id').single();
 
       if (barbError) throw new Error('Este SLUG já está em uso ou ocorreu um erro no servidor.');
@@ -363,6 +365,23 @@ export default function CadastroBarbearia() {
                   </button>
                 ))}
               </div>
+
+              <label className="mt-4 flex items-start gap-3 p-4 rounded-xl border border-border-line bg-background cursor-pointer hover:border-brand/40 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={temEstacionamento}
+                  onChange={(e) => setTemEstacionamento(e.target.checked)}
+                  className="mt-1 accent-brand"
+                />
+                <span>
+                  <span className="flex items-center gap-2 text-sm font-black text-text-base">
+                    <Car size={16} className="text-brand" /> Possui estacionamento
+                  </span>
+                  <span className="block text-xs text-text-muted mt-1">
+                    Marque se a barbearia oferece estacionamento para clientes. Aparece no filtro do marketplace.
+                  </span>
+                </span>
+              </label>
             </div>
 
             {/* SESSÃO 3: DADOS DO DONO (ACESSO) */}

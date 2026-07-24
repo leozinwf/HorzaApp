@@ -86,12 +86,12 @@ async function criarEventoGoogleCalendar(
   return { ok: true, tokens: ativos };
 }
 
-async function enviarWhatsApp(telefone: string, mensagem: string) {
+async function enviarWhatsAppTemplate(telefone: string, parametros: { nome: string, dataHora: string, servico: string, id: string }) {
   const token = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
   const phoneId = Deno.env.get('WHATSAPP_PHONE_ID');
   if (!token || !phoneId || !telefone) return false;
 
-  const res = await fetch(`https://graph.facebook.com/v19.0/${phoneId}/messages`, {
+  const res = await fetch(`https://graph.facebook.com/v25.0/${phoneId}/messages`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -100,8 +100,24 @@ async function enviarWhatsApp(telefone: string, mensagem: string) {
     body: JSON.stringify({
       messaging_product: 'whatsapp',
       to: telefone,
-      type: 'text',
-      text: { body: mensagem },
+      type: 'template',
+      template: {
+        name: 'lembrete_agendamento',
+        language: {
+          code: 'pt_BR'
+        },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', text: parametros.nome },
+              { type: 'text', text: parametros.dataHora },
+              { type: 'text', text: parametros.servico },
+              { type: 'text', text: parametros.id }
+            ]
+          }
+        ]
+      }
     }),
   });
 
@@ -158,12 +174,17 @@ serve(async (req) => {
       `💈 Profissional: ${ag.barbeiros?.nome || '—'}`,
     ].join('\n');
 
-    const telefoneBarbeiro = soDigitos(ag.barbeiros?.whatsapp || ag.barbearias?.telefone);
-    const telefoneIntl = telefoneBarbeiro.startsWith('55') ? telefoneBarbeiro : `55${telefoneBarbeiro}`;
+    const clienteWhatsappSoDigitos = soDigitos(clienteWhatsapp);
+    const telefoneIntl = clienteWhatsappSoDigitos.startsWith('55') ? clienteWhatsappSoDigitos : `55${clienteWhatsappSoDigitos}`;
 
     let whatsappEnviado = false;
     if (telefoneIntl.length >= 12) {
-      whatsappEnviado = await enviarWhatsApp(telefoneIntl, mensagem);
+      whatsappEnviado = await enviarWhatsAppTemplate(telefoneIntl, {
+        nome: clienteNome,
+        dataHora: dataFmt,
+        servico: ag.servicos?.nome_servico || 'Serviço Padrão',
+        id: ag.id
+      });
     }
 
     let calendarCriado = false;
@@ -200,13 +221,16 @@ serve(async (req) => {
       }
     }
 
+    const telefoneBarbeiroParaUrl = soDigitos(ag.barbeiros?.whatsapp || ag.barbearias?.telefone);
+    const telefoneIntlBarbeiro = telefoneBarbeiroParaUrl.startsWith('55') ? telefoneBarbeiroParaUrl : `55${telefoneBarbeiroParaUrl}`;
+
     return new Response(
       JSON.stringify({
         ok: true,
         whatsapp_enviado: whatsappEnviado,
         calendar_criado: calendarCriado,
-        whatsapp_fallback_url: telefoneIntl.length >= 12
-          ? `https://wa.me/${telefoneIntl}?text=${encodeURIComponent(mensagem)}`
+        whatsapp_fallback_url: telefoneIntlBarbeiro.length >= 12
+          ? `https://wa.me/${telefoneIntlBarbeiro}?text=${encodeURIComponent(mensagem)}`
           : null,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },

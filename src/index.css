@@ -53,7 +53,36 @@
 }
 
 html {
-  color-scheme: light dark;
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+/* Ícone nativo do calendário/hora visível em ambos os temas */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"] {
+  color-scheme: light;
+}
+
+.dark input[type="date"],
+.dark input[type="time"],
+.dark input[type="datetime-local"] {
+  color-scheme: dark;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.72;
+}
+
+.dark input[type="date"]::-webkit-calendar-picker-indicator,
+.dark input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  opacity: 0.9;
 }
 
 body {
@@ -285,4 +314,67 @@ html::-webkit-scrollbar-thumb:hover {
 .touch-target {
   min-height: 44px;
   min-width: 44px;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Carrossel horizontal estilo iFood */
+.horza-scroll-x {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.horza-scroll-x::-webkit-scrollbar {
+  display: none;
+}
+
+.horza-scroll-x-item {
+  flex-shrink: 0;
+  scroll-snap-align: start;
+}
+
+/* Leaflet — marcadores e popups Horza */
+.horza-map-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.horza-map-marker-hover {
+  z-index: 9999 !important;
+}
+
+.horza-map-marker-hover .marker-inner-destaque,
+.horza-map-marker-hover > div {
+  transform: scale(1.15) translateY(-4px);
+  transition: transform 0.2s ease-out;
+}
+
+.leaflet-popup.horza-map-popup .leaflet-popup-content-wrapper {
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.leaflet-popup.horza-map-popup .leaflet-popup-content {
+  margin: 8px 12px;
+  line-height: 1.3;
+}
+
+.leaflet-popup.horza-map-popup .leaflet-popup-tip {
+  box-shadow: none;
 }

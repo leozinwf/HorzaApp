@@ -1,33 +1,39 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
-import { Calendar, CheckCircle2, TrendingUp, Clock, User, Scissors } from 'lucide-react';
+import { useOutletContext } from 'react-router-dom';
+import { Calendar, CheckCircle2, TrendingUp, Clock, User, Scissors, AlertCircle } from 'lucide-react';
+import { getDayBoundsISO } from '../../utils/formatters';
 import ProSection from '../../components/shared/ProSection';
 import { DashboardAvancadoBlock } from '../../components/shared/ProModuleBlocks';
 import { FEATURE_KEYS } from '../../constants/planFeatures';
 
 export default function DashboardAdmin() {
   const { profile } = useAuth();
+  const { adminBarbeariaId } = useOutletContext();
   const [loading, setLoading] = useState(true);
   
   // Estados para as Métricas
   const [stats, setStats] = useState({
     totalAgendamentos: 0,
     concluidos: 0,
+    faltas: 0,
+    aguardandoResolucao: 0,
     receita: 0,
     proximos: []
   });
 
   useEffect(() => {
-    if (profile?.barbearia_id) buscarDadosHoje();
-  }, [profile?.barbearia_id]);
+    if (adminBarbeariaId) buscarDadosHoje();
+  }, [adminBarbeariaId]);
 
   const buscarDadosHoje = async () => {
     setLoading(true);
     try {
       const hojeHTML = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-      const inicioDia = new Date(`${hojeHTML}T00:00:00`).toISOString();
-      const fimDia = new Date(`${hojeHTML}T23:59:59`).toISOString();
+  const bounds = getDayBoundsISO(hojeHTML);
+      const inicioDia = bounds.inicio;
+      const fimDia = bounds.fim;
 
       // Busca todos os agendamentos de hoje vinculados a barbeiros desta barbearia
       const { data, error } = await supabase
@@ -38,6 +44,7 @@ export default function DashboardAdmin() {
           barbeiros:usuarios!agendamentos_barbeiro_id_fkey(nome, barbearia_id),
           clientes:usuarios!agendamentos_cliente_id_fkey(nome)
         `)
+        .eq('barbearia_id', adminBarbeariaId)
         .gte('data_hora', inicioDia)
         .lte('data_hora', fimDia)
         .order('data_hora', { ascending: true });
@@ -45,22 +52,30 @@ export default function DashboardAdmin() {
       if (error) throw error;
 
       // Filtra apenas os agendamentos da barbearia atual
-      const agendamentosHoje = data?.filter(ag => ag.barbeiros?.barbearia_id === profile.barbearia_id) || [];
+      const agendamentosHoje = data || [];
 
       let receitaTotal = 0;
       let totalConcluidos = 0;
+      let totalFaltas = 0;
+      let aguardandoResolucao = 0;
       let pendentes = [];
 
       const agora = new Date();
 
       agendamentosHoje.forEach(ag => {
+        const duracaoMs = (ag.servicos?.duracao_minutos || 30) * 60000;
+        const fimAg = new Date(ag.data_hora).getTime() + duracaoMs;
+
         if (ag.status_atendimento === 'concluido') {
           totalConcluidos++;
           receitaTotal += ag.servicos?.preco || 0;
+        } else if (ag.status_atendimento === 'ausente') {
+          totalFaltas++;
         } else if (ag.status_atendimento === 'agendado') {
-          // Só adiciona aos próximos se a hora ainda não tiver passado
           if (new Date(ag.data_hora) > agora) {
-             pendentes.push(ag);
+            pendentes.push(ag);
+          } else if (agora.getTime() >= fimAg) {
+            aguardandoResolucao++;
           }
         }
       });
@@ -68,8 +83,10 @@ export default function DashboardAdmin() {
       setStats({
         totalAgendamentos: agendamentosHoje.length,
         concluidos: totalConcluidos,
+        faltas: totalFaltas,
+        aguardandoResolucao,
         receita: receitaTotal,
-        proximos: pendentes.slice(0, 5) // Mostra apenas os próximos 5
+        proximos: pendentes.slice(0, 5)
       });
 
     } catch (err) {
@@ -92,7 +109,7 @@ export default function DashboardAdmin() {
       ) : (
         <>
           {/* CARDS DE ESTATÍSTICAS */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             
             <div className="bg-surface border border-border-line p-6 rounded-2xl shadow-sm">
               <div className="flex justify-between items-start mb-4">
@@ -108,9 +125,19 @@ export default function DashboardAdmin() {
                 <div className="p-2 bg-green-500/10 text-green-500 rounded-lg"><CheckCircle2 size={20}/></div>
               </div>
               <p className="text-3xl font-black text-text-base">{stats.concluidos}</p>
-              <p className="text-xs text-text-muted mt-1">
-                Faltam {stats.totalAgendamentos - stats.concluidos}
-              </p>
+            </div>
+
+            <div className="bg-surface border border-border-line p-6 rounded-2xl shadow-sm">
+              <div className="flex justify-between items-start mb-4">
+                <p className="text-sm font-bold text-text-muted uppercase">Faltas (No-show)</p>
+                <div className="p-2 bg-amber-500/10 text-amber-600 rounded-lg"><AlertCircle size={20}/></div>
+              </div>
+              <p className="text-3xl font-black text-text-base">{stats.faltas}</p>
+              {stats.aguardandoResolucao > 0 && (
+                <p className="text-xs text-amber-600 font-bold mt-1">
+                  {stats.aguardandoResolucao} aguardando confirmação na agenda
+                </p>
+              )}
             </div>
 
             <div className="bg-surface border border-border-line p-6 rounded-2xl shadow-sm border-l-4 border-l-brand">

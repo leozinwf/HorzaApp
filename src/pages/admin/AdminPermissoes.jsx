@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
 import { ShieldCheck, UserCheck, CalendarDays, AlertCircle, Lock, Save } from 'lucide-react';
 import { isDono, SUPER_ADMIN_EMAIL, isSuperAdmin } from '../../constants/roles';
@@ -20,6 +21,7 @@ const carregarPerfisAutorizados = (barbeariaId) => {
 
 export default function AdminPermissoes() {
   const { user, profile } = useAuth();
+  const { adminBarbeariaId } = useOutletContext();
   const [equipe, setEquipe] = useState([]);
   const [rascunho, setRascunho] = useState({});
   const [loading, setLoading] = useState(true);
@@ -38,7 +40,7 @@ export default function AdminPermissoes() {
 
   useEffect(() => {
     if (profile?.barbearia_id) {
-      const perfis = carregarPerfisAutorizados(profile.barbearia_id);
+      const perfis = carregarPerfisAutorizados(adminBarbeariaId);
       setPerfisAutorizados(perfis);
       setPerfisRascunho(perfis);
       buscarEquipe();
@@ -51,7 +53,7 @@ export default function AdminPermissoes() {
       const { data, error } = await supabase
         .from('usuarios')
         .select('id, nome, email, role, ativo, exibe_na_agenda')
-        .eq('barbearia_id', profile.barbearia_id)
+        .eq('barbearia_id', adminBarbeariaId)
         .neq('role', 'cliente')
         .order('nome');
 
@@ -123,7 +125,7 @@ export default function AdminPermissoes() {
         if (!data?.length) throw new Error('Sem permissão para salvar alterações.');
 
         await auditLogService.registrar({
-          barbeariaId: profile.barbearia_id,
+          barbeariaId: adminBarbeariaId,
           usuarioId: profile.id,
           usuarioNome: profile.nome,
           modulo: 'permissoes',
@@ -133,7 +135,7 @@ export default function AdminPermissoes() {
       }
 
       if (perfisAlterados && dono) {
-        localStorage.setItem(`${CONFIG_KEY_PREFIX}${profile.barbearia_id}`, JSON.stringify(perfisRascunho));
+        localStorage.setItem(`${CONFIG_KEY_PREFIX}${adminBarbeariaId}`, JSON.stringify(perfisRascunho));
         setPerfisAutorizados([...perfisRascunho]);
       }
 

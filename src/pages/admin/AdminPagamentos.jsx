@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useOutletContext } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { supabase } from '../../services/supabaseClient';
 import { CreditCard, Wallet, QrCode, CheckCircle2, AlertCircle, Link as LinkIcon, ExternalLink } from 'lucide-react';
 import ProSection from '../../components/shared/ProSection';
@@ -10,6 +12,7 @@ import { FEATURE_KEYS } from '../../constants/planFeatures';
 export default function AdminPagamentos() {
   const { slug } = useParams();
   const { profile } = useAuth();
+  const { adminBarbeariaId } = useOutletContext();
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [dadosPagamento, setDadosPagamento] = useState({
@@ -18,10 +21,10 @@ export default function AdminPagamentos() {
   });
 
   useEffect(() => {
-    if (profile?.barbearia_id) {
+    if (adminBarbeariaId) {
       buscarConfiguracoes();
     }
-  }, [profile]);
+  }, [adminBarbeariaId]);
 
   const buscarConfiguracoes = async () => {
     setLoading(true);
@@ -29,7 +32,7 @@ export default function AdminPagamentos() {
       const { data, error } = await supabase
         .from('barbearias')
         .select('gateway_pagamento, chave_pix')
-        .eq('id', profile.barbearia_id)
+        .eq('id', adminBarbeariaId)
         .single();
 
       if (error) throw error;
@@ -48,7 +51,7 @@ export default function AdminPagamentos() {
 
   const conectarStripe = () => {
     if (dadosPagamento.gateway_pagamento === 'stripe') {
-      alert('A funcionalidade de desconectar pode ser feita diretamente no painel da Stripe.');
+      toast.error('A funcionalidade de desconectar pode ser feita diretamente no painel da Stripe.');
       return;
     }
 
@@ -56,7 +59,7 @@ export default function AdminPagamentos() {
 
     const clientId = import.meta.env.VITE_STRIPE_CLIENT_ID || 'org_6UwAv1Cg9PgXfMjbNSqb6NU';
     const redirectUri = `${window.location.origin}/${slug}/admin/pagamentos/callback`;
-    const state = profile.barbearia_id;
+    const state = adminBarbeariaId;
     const stripeAuthUrl = `https://connect.stripe.com/oauth/authorize?response_type=code&client_id=${clientId}&scope=read_write&state=${state}&redirect_uri=${encodeURIComponent(redirectUri)}`;
 
     window.location.href = stripeAuthUrl;
@@ -69,7 +72,7 @@ export default function AdminPagamentos() {
     }
 
     if (gateway === 'mercadopago') {
-      alert('Integração com Mercado Pago em breve.');
+      toast.error('Integração com Mercado Pago em breve.');
     }
   };
 
@@ -79,13 +82,13 @@ export default function AdminPagamentos() {
       const { error } = await supabase
         .from('barbearias')
         .update({ chave_pix: dadosPagamento.chave_pix })
-        .eq('id', profile.barbearia_id);
+        .eq('id', adminBarbeariaId);
 
       if (error) throw error;
-      alert('Chave PIX atualizada com sucesso!');
+      toast.success('Chave PIX atualizada com sucesso!');
     } catch (err) {
       console.error('Erro ao salvar PIX:', err);
-      alert('Erro ao salvar chave PIX.');
+      toast.error('Erro ao salvar chave PIX.');
     } finally {
       setSalvando(false);
     }

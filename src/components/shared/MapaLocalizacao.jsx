@@ -31,7 +31,8 @@ export default function MapaLocalizacao({ barbearia, className = '', compact = f
           barbearias={[pontoUnico]}
           localizacaoUsuario={localizacaoUsuario}
           centroPreferido={{ lat: pontoUnico.lat, lng: pontoUnico.lng }}
-          raioKm={2.5}
+          raioKm={1}
+          estiloMapa="limpo"
           altura={compact ? '280px' : '320px'}
         />
       ) : (

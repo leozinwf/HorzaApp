@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../services/supabaseClient';
 
 import { useAuth } from '../../context/AuthContext';
+import { useOutletContext } from 'react-router-dom';
 
 import { useModal } from '../../context/ModalContext';
 
@@ -19,6 +20,7 @@ import HistoricoMudancas from '../../components/admin/HistoricoMudancas';
 export default function AdminUsuarios() {
 
   const { profile } = useAuth();
+  const { adminBarbeariaId } = useOutletContext();
 
   const { showAlert } = useModal();
 
@@ -50,9 +52,9 @@ export default function AdminUsuarios() {
 
   useEffect(() => {
 
-    if (profile?.barbearia_id) buscarUsuarios();
+    if (adminBarbeariaId) buscarUsuarios();
 
-  }, [profile]);
+  }, [adminBarbeariaId]);
 
 
 
@@ -62,20 +64,20 @@ export default function AdminUsuarios() {
 
     try {
 
-      const { data: vinculados, error: err1 } = await supabase.from('usuarios').select('*').eq('barbearia_id', profile.barbearia_id);
+      const { data: vinculados, error: err1 } = await supabase.from('usuarios').select('*').eq('barbearia_id', adminBarbeariaId).limit(500);
 
       if (err1) throw err1;
 
 
 
-      const { data: agendamentos, error: err2 } = await supabase.from('agendamentos').select('cliente_id').eq('barbearia_id', profile.barbearia_id).not('cliente_id', 'is', null);
+      const { data: agendamentos, error: err2 } = await supabase.from('agendamentos').select('cliente_id').eq('barbearia_id', adminBarbeariaId).not('cliente_id', 'is', null);
 
       if (err2) throw err2;
 
       const { data: agendamentosGhost, error: errGhost } = await supabase
         .from('agendamentos')
         .select('nome_cliente_avulso, whatsapp_cliente_avulso, email_cliente_avulso, criado_em')
-        .eq('barbearia_id', profile.barbearia_id)
+        .eq('barbearia_id', adminBarbeariaId)
         .is('cliente_id', null)
         .not('nome_cliente_avulso', 'is', null);
 
@@ -165,7 +167,7 @@ export default function AdminUsuarios() {
 
   const usuarioPertenceABarbearia = (usuario) =>
 
-    usuario?.barbearia_id === profile.barbearia_id;
+    usuario?.barbearia_id === adminBarbeariaId;
 
 
 
@@ -210,7 +212,7 @@ export default function AdminUsuarios() {
 
       await auditLogService.registrar({
 
-        barbeariaId: profile.barbearia_id,
+        barbeariaId: adminBarbeariaId,
 
         usuarioId: profile.id,
 

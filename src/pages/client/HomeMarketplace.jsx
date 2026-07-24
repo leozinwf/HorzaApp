@@ -1,14 +1,54 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { MapPin, Scissors, Search, Star, RefreshCw, WifiOff } from 'lucide-react';
+import { resolverCoordenadasLista } from '../../utils/endereco';
+import { MapPin, Scissors, Search, Star, RefreshCw, WifiOff, Settings2, Minimize2, Maximize2, MapPin as MapPinIcon } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabaseClient';
 import MapaInterativo from '../../components/shared/MapaInterativo';
 import BotaoRota from '../../components/shared/BotaoRota';
+import CarrosselBanners from '../../components/marketplace/CarrosselBanners';
+import FiltrosRapidos from '../../components/marketplace/FiltrosRapidos';
+import ModalFiltrosMarketplace from '../../components/marketplace/ModalFiltrosMarketplace';
+import SaudacaoMarketplace from '../../components/marketplace/SaudacaoMarketplace';
 import HorzaFooter from '../../components/layout/HorzaFooter';
+import { aplicarFiltroRapido } from '../../utils/marketplaceFiltros';
 
-const CAMPOS = 'id, nome, slug, cidade, bairro, rua, numero, estado, cep, latitude, longitude, logo_url, capa_url';
+const CAMPOS = 'id, nome, slug, cidade, bairro, rua, numero, estado, cep, latitude, longitude, logo_url, capa_url, hora_abertura, hora_fechamento, dias_funcionamento, tem_estacionamento';
 const LOADING_TIMEOUT_MS = 12000;
 const GEO_TIMEOUT_MS = 6000;
+
+// Função para calcular distância com fórmula de Haversine
+function calcularDistanciaKm(lat1, lon1, lat2, lon2) {
+  const la1 = Number(lat1);
+  const lo1 = Number(lon1);
+  const la2 = Number(lat2);
+  const lo2 = Number(lon2);
+  if (!Number.isFinite(la1) || !Number.isFinite(lo1) || !Number.isFinite(la2) || !Number.isFinite(lo2)) return null;
+  const R = 6371; // Raio da Terra em km
+  const dLat = (la2 - la1) * Math.PI / 180;
+  const dLon = (lo2 - lo1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(la1 * Math.PI / 180) * Math.cos(la2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+const barbeariasNoRaio = (lista, raio) =>
+  lista.filter((b) => b.distancia_km != null && b.distancia_km <= raio + 0.001);
+
+const normalizarBarbeariaCoords = (b, latUsuario, lngUsuario) => {
+  const lat = Number(b.lat ?? b.latitude);
+  const lng = Number(b.lng ?? b.longitude);
+  const distancia = calcularDistanciaKm(latUsuario, lngUsuario, lat, lng);
+  return {
+    ...b,
+    lat: Number.isFinite(lat) ? lat : null,
+    lng: Number.isFinite(lng) ? lng : null,
+    distancia_km: distancia,
+  };
+};
 
 const ordenarBarbearias = (lista) =>
   [...lista].sort((a, b) => {
@@ -83,14 +123,20 @@ function LoadingBarbearias() {
 }
 
 export default function HomeMarketplace() {
+  const { profile } = useAuth();
   const [barbearias, setBarbearias] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingTimeout, setLoadingTimeout] = useState(false);
   const [erroCarregamento, setErroCarregamento] = useState(false);
   const [busca, setBusca] = useState('');
+  const [raioKm, setRaioKm] = useState(2.8);
+  const [filtroRapido, setFiltroRapido] = useState(null);
+  const [mostrarFiltros, setMostrarFiltros] = useState(false);
+  const [mapaMinimizado, setMapaMinimizado] = useState(false);
   const [localizacao, setLocalizacao] = useState(null);
   const [geoPronto, setGeoPronto] = useState(false);
   const [destaqueMapa, setDestaqueMapa] = useState(null);
+  const [barbeariaParaCentralizar, setBarbeariaParaCentralizar] = useState(null);
   const fetchIdRef = useRef(0);
 
   const fetchBarbearias = useCallback(async (lat, lng, query = '', manterLista = false) => {
@@ -111,39 +157,29 @@ export default function HomeMarketplace() {
           .or(`nome.ilike.%${query}%,cidade.ilike.%${query}%,bairro.ilike.%${query}%`)
           .limit(20);
         if (error) throw error;
+        
+        const comPlanos = await enriquecerComPlanos(data || []);
+        const comCoordenadas = await resolverCoordenadasLista(comPlanos);
+        const comDistancia = comCoordenadas.map((b) => normalizarBarbeariaCoords(b, lat, lng));
+
         if (fetchId !== fetchIdRef.current) return;
-        setBarbearias(ordenarBarbearias(await enriquecerComPlanos(data || [])));
+        setBarbearias(ordenarBarbearias(comDistancia));
         setErroCarregamento(false);
         return;
       }
 
-      const catalogo = await buscarCatalogoAprovado();
-      let proximas = [];
-
-      if (lat && lng) {
-        const { data, error } = await supabase.rpc('buscar_barbearias_proximas', {
-          user_lat: parseFloat(lat),
-          user_lon: parseFloat(lng),
-          distancia_maxima_km: 50.0,
-        });
-        if (!error && data?.length) proximas = data;
-      }
+      const catalogoBruto = await buscarCatalogoAprovado();
+      const catalogoComCoordenadas = await resolverCoordenadasLista(catalogoBruto);
+      
+      const catalogoComDistancia = catalogoComCoordenadas.map((b) => normalizarBarbeariaCoords(b, lat, lng));
 
       if (fetchId !== fetchIdRef.current) return;
-      setBarbearias(mesclarComDistancias(catalogo, proximas));
+      setBarbearias(ordenarBarbearias(catalogoComDistancia));
       setErroCarregamento(false);
     } catch {
       if (fetchId !== fetchIdRef.current) return;
-      try {
-        const fallback = await buscarCatalogoAprovado();
-        if (fetchId !== fetchIdRef.current) return;
-        setBarbearias(ordenarBarbearias(fallback));
-        setErroCarregamento(false);
-      } catch {
-        if (fetchId !== fetchIdRef.current) return;
-        setBarbearias([]);
-        setErroCarregamento(true);
-      }
+      setBarbearias([]);
+      setErroCarregamento(true);
     } finally {
       if (fetchId === fetchIdRef.current) {
         setLoading(false);
@@ -183,7 +219,7 @@ export default function HomeMarketplace() {
       busca ? 400 : 0
     );
     return () => clearTimeout(timer);
-  }, [geoPronto, busca, localizacao, fetchBarbearias]);
+  }, [geoPronto, busca, localizacao, raioKm, fetchBarbearias]);
 
   useEffect(() => {
     if (!loading) return;
@@ -196,33 +232,93 @@ export default function HomeMarketplace() {
     fetchBarbearias(localizacao?.lat, localizacao?.lng, busca);
   };
 
+  const scrollToMap = (b, e) => {
+    e.preventDefault();
+
+    if (b.distancia_km != null && b.distancia_km > raioKm) {
+      let novoRaio = Math.ceil(b.distancia_km * 10) / 10;
+      if (novoRaio > 15) novoRaio = 15;
+      setRaioKm(novoRaio);
+    }
+
+    setDestaqueMapa(b);
+    setBarbeariaParaCentralizar({ ...b, _ts: Date.now() });
+
+    window.setTimeout(() => {
+      const mapElement = document.getElementById('mapa-section');
+      if (mapElement) {
+        mapElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 80);
+  };
+
   const aguardandoGeo = !geoPronto;
   const carregandoInicial = aguardandoGeo || (loading && barbearias.length === 0);
 
+  const barbeariasProcessadas = useMemo(() => {
+    if (!filtroRapido) return ordenarBarbearias(barbearias);
+    return aplicarFiltroRapido(barbearias, filtroRapido);
+  }, [barbearias, filtroRapido]);
+
+  const barbeariasVitrine = useMemo(
+    () => barbeariasProcessadas.slice(0, 8),
+    [barbeariasProcessadas]
+  );
+
+  const barbeariasMapa = useMemo(
+    () => barbeariasNoRaio(barbeariasProcessadas, raioKm),
+    [barbeariasProcessadas, raioKm]
+  );
+
+  const handleSelecionarMapa = useCallback((b) => {
+    setDestaqueMapa(b);
+  }, []);
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <div className="flex-1 w-full flex flex-col items-center pt-10 px-6 pb-6">
-      <div className="w-full max-w-4xl space-y-8">
-        <div className="text-center space-y-3">
-          <h1 className="text-4xl md:text-5xl font-black text-brand tracking-tight">Horza App</h1>
-          <p className="text-text-muted font-medium text-lg">Encontre barbearias perto de você e agende online.</p>
+      <div className="flex-1 w-full min-w-0 flex flex-col items-center pt-10 px-6 pb-6">
+        <div className="w-full max-w-4xl min-w-0 space-y-5">
+          <SaudacaoMarketplace profile={profile} temLocalizacao={!!localizacao} />
+
+        <div className="bg-surface border border-border-line rounded-2xl flex flex-col shadow-sm focus-within:border-brand transition-colors overflow-hidden">
+          <div className="flex items-center p-2">
+            <Search className="text-text-muted ml-3 shrink-0" size={20} />
+            <input
+              type="text"
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar por nome, cidade ou bairro..."
+              className="w-full bg-transparent p-3 outline-none text-text-base placeholder-text-muted"
+            />
+          </div>
         </div>
 
-        <div className="bg-surface border border-border-line rounded-2xl p-2 flex items-center shadow-sm focus-within:border-brand transition-colors">
-          <Search className="text-text-muted ml-3 shrink-0" size={20} />
-          <input
-            type="text"
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            placeholder="Buscar por nome, cidade ou bairro..."
-            className="w-full bg-transparent p-3 outline-none text-text-base placeholder-text-muted"
-          />
-        </div>
+        <CarrosselBanners />
+
+        <FiltrosRapidos
+          filtroAtivo={filtroRapido}
+          onFiltroChange={setFiltroRapido}
+          onAbrirFiltros={() => setMostrarFiltros(true)}
+          painelAberto={mostrarFiltros}
+        />
+
+        <ModalFiltrosMarketplace
+          aberto={mostrarFiltros}
+          onFechar={() => setMostrarFiltros(false)}
+          raioKm={raioKm}
+          onRaioChange={setRaioKm}
+          filtroAtivo={filtroRapido}
+          onFiltroChange={setFiltroRapido}
+          onLimpar={() => {
+            setFiltroRapido(null);
+            setRaioKm(2.8);
+          }}
+        />
 
         <div>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-black text-text-muted uppercase tracking-wider">
-              {busca ? 'Resultados' : 'Principais barbearias'}
+              {busca ? 'Resultados' : 'Em Destaque'}
             </h3>
             {loading && barbearias.length > 0 && (
               <span className="text-xs text-brand font-bold animate-pulse">Atualizando...</span>
@@ -265,72 +361,133 @@ export default function HomeMarketplace() {
             <div className="bg-surface border border-dashed border-border-line p-8 rounded-2xl text-center">
               <p className="font-bold text-text-muted">Nenhuma barbearia encontrada.</p>
             </div>
+          ) : barbeariasVitrine.length === 0 ? (
+            <div className="bg-surface border border-dashed border-border-line p-8 rounded-2xl text-center space-y-3">
+              <p className="font-bold text-text-muted">Nenhuma barbearia corresponde ao filtro selecionado.</p>
+              <button
+                type="button"
+                onClick={() => setFiltroRapido(null)}
+                className="text-sm font-bold text-brand hover:underline cursor-pointer"
+              >
+                Limpar filtro
+              </button>
+            </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {barbearias.map((b) => (
-                <Link
+              {barbeariasVitrine.map((b) => (
+                <div
                   key={b.id}
-                  to={`/${b.slug}`}
                   onMouseEnter={() => setDestaqueMapa(b)}
+                  onMouseLeave={() => setDestaqueMapa(null)}
                   onFocus={() => setDestaqueMapa(b)}
-                  className="bg-surface rounded-2xl border border-border-line hover:border-brand/50 hover:shadow-md transition-all group overflow-hidden flex"
+                  onBlur={() => setDestaqueMapa(null)}
+                  className="bg-surface rounded-2xl border border-border-line hover:border-brand/50 hover:shadow-md transition-all group flex flex-col sm:flex-row relative z-10 hover:z-50 focus-within:z-50"
                 >
-                  <div className="w-24 sm:w-28 shrink-0 bg-background">
+                  <a href={`/${b.slug}`} onClick={(e) => scrollToMap(b, e)} className="absolute inset-0 z-0" aria-label={`Ver barbearia ${b.nome} no mapa`} />
+                  
+                  <div className="w-full sm:w-28 shrink-0 bg-background h-32 sm:h-auto relative z-0 pointer-events-none overflow-hidden rounded-t-2xl sm:rounded-tr-none sm:rounded-l-2xl">
                     {(b.capa_url || b.logo_url) ? (
-                      <img src={b.capa_url || b.logo_url} alt={b.nome} className="w-full h-full object-cover min-h-[7rem]" />
+                      <img src={b.capa_url || b.logo_url} alt={b.nome} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                     ) : (
-                      <div className="w-full h-full min-h-[7rem] flex items-center justify-center bg-brand/10 text-brand">
+                      <div className="w-full h-full flex items-center justify-center bg-brand/10 text-brand">
                         <Scissors size={28} />
                       </div>
                     )}
                   </div>
-                  <div className="p-4 flex-1 min-w-0 flex flex-col justify-center">
-                    <div className="flex items-start gap-1">
-                      {(b.plan_slug === 'pro' || b.plan_slug === 'plus') && (
-                        <Star size={14} className="text-amber-500 shrink-0 mt-0.5 fill-amber-500" title="Horza Pro" />
-                      )}
-                      <h2 className="text-base font-black text-text-base group-hover:text-brand truncate">{b.nome}</h2>
+                  
+                  <div className="p-4 flex-1 min-w-0 flex flex-col justify-between z-10 pointer-events-none">
+                    <div>
+                      <div className="flex items-start gap-1">
+                        {(b.plan_slug === 'pro' || b.plan_slug === 'plus') && (
+                          <Star size={14} className="text-amber-500 shrink-0 mt-0.5 fill-amber-500" title="Horza Pro" />
+                        )}
+                        <h2 className="text-base font-black text-text-base group-hover:text-brand truncate">{b.nome}</h2>
+                      </div>
+                      
+                      <div className="text-xs text-text-muted mt-1.5 flex items-start gap-1.5">
+                        <MapPin size={12} className="shrink-0 mt-0.5" />
+                        <span className="line-clamp-2 leading-relaxed">
+                          {[b.rua, b.numero].filter(Boolean).join(', ') || 'S/N'}
+                          <br />
+                          {b.bairro ? `${b.bairro}, ` : ''}{b.cidade || '—'}
+                        </span>
+                      </div>
                     </div>
-                    <p className="text-xs text-text-muted mt-1 flex items-center gap-1 truncate">
-                      <MapPin size={12} className="shrink-0" />
-                      {b.bairro ? `${b.bairro}, ` : ''}{b.cidade || '—'}
-                    </p>
-                    {b.distancia_km != null && (
-                      <span className="mt-2 inline-block text-[10px] font-bold text-brand bg-brand/10 px-2 py-0.5 rounded-md w-fit">
-                        {Number(b.distancia_km).toFixed(1)} km
-                      </span>
-                    )}
+                    
+                    <div className="flex items-center justify-between gap-3 mt-4 pointer-events-auto">
+                      {b.distancia_km != null ? (
+                        <span className="inline-block text-[10px] font-bold text-brand bg-brand/10 px-2.5 py-1 rounded-md">
+                          {b.distancia_km < 1 ? `${Math.round(b.distancia_km * 1000)} m de você` : `${Number(b.distancia_km).toFixed(1)} km de você`}
+                        </span>
+                      ) : <span />}
+                      
+                      <div className="flex gap-2">
+                        <BotaoRota barbearia={b} compacto={true} />
+                        <Link to={`/${b.slug}`} className="bg-brand text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:brightness-110">
+                          Agendar
+                        </Link>
+                      </div>
+                    </div>
                   </div>
-                </Link>
+                </div>
               ))}
             </div>
           )}
         </div>
 
         {!carregandoInicial && (
-          <div className="space-y-4">
-            <h3 className="text-sm font-black text-text-muted uppercase tracking-wider flex items-center gap-2">
-              <MapPin size={16} className="text-brand" /> Mapa — barbearias próximas
-            </h3>
-
-            <MapaInterativo
-              barbearias={barbearias}
-              localizacaoUsuario={localizacao}
-              onSelecionar={setDestaqueMapa}
-              raioKm={2.5}
-            />
-
-            {destaqueMapa && (
-              <div className="flex flex-wrap items-center gap-3 bg-surface border border-border-line rounded-2xl p-4">
-                <div className="flex-1 min-w-0">
-                  <p className="font-black truncate">{destaqueMapa.nome}</p>
-                  <p className="text-xs text-text-muted truncate">{destaqueMapa.bairro}, {destaqueMapa.cidade}</p>
+          <div id="mapa-section" className="space-y-4 transition-all scroll-mt-24">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <h3 className="text-sm font-black text-text-muted uppercase tracking-wider flex items-center gap-2 whitespace-nowrap">
+                <MapPin size={16} className="text-brand" /> Mapa — barbearias próximas
+              </h3>
+              
+              {!mapaMinimizado && (
+                <div className="flex-1 w-full max-w-sm flex items-center gap-4 bg-surface px-4 py-2 rounded-xl border border-border-line">
+                  <div className="relative flex-1 flex items-center gap-3">
+                    <span className="text-[10px] font-bold text-text-muted">100m</span>
+                    <div className="relative flex-1 pt-1 flex items-center">
+                       <input
+                        type="range"
+                        min="0.1"
+                        max="15"
+                        step="0.1"
+                        value={raioKm}
+                        onChange={(e) => setRaioKm(parseFloat(e.target.value))}
+                        className="w-full accent-brand cursor-pointer h-1.5 bg-border-line rounded-lg appearance-none"
+                      />
+                    </div>
+                    <span className="text-[10px] font-bold text-text-muted">15km</span>
+                  </div>
+                  <div className="text-[10px] font-black text-brand bg-brand/10 px-2 py-1 rounded-md whitespace-nowrap">
+                    {raioKm < 1 ? `${Math.round(raioKm * 1000)}m` : `${Number(raioKm).toFixed(1)}km`}
+                  </div>
                 </div>
-                <BotaoRota barbearia={destaqueMapa} />
-                <Link to={`/${destaqueMapa.slug}`} className="bg-brand text-white px-4 py-2.5 rounded-xl text-xs font-black hover:brightness-110">
-                  Ver barbearia
-                </Link>
-              </div>
+              )}
+
+              <button
+                onClick={() => setMapaMinimizado(!mapaMinimizado)}
+                className="text-text-muted hover:text-text-base p-2 rounded-lg transition-colors cursor-pointer shrink-0"
+                title={mapaMinimizado ? "Expandir mapa" : "Minimizar mapa"}
+              >
+                {mapaMinimizado ? <Maximize2 size={18} /> : <Minimize2 size={18} />}
+              </button>
+            </div>
+
+            {!mapaMinimizado && (
+              <>
+                <div className="animate-fadeIn">
+                  <MapaInterativo
+                    barbearias={barbeariasMapa}
+                    localizacaoUsuario={localizacao}
+                    onSelecionar={handleSelecionarMapa}
+                    raioKm={raioKm}
+                    hoveredBarbeariaId={destaqueMapa?.id}
+                    barbeariaParaCentralizar={barbeariaParaCentralizar}
+                    estiloMapa="limpo"
+                  />
+                </div>
+              </>
             )}
           </div>
         )}

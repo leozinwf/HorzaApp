@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
 import { Calendar, Clock, User, CheckCircle2, ChevronRight, ArrowLeft, X, AlertTriangle, Mail, Phone, LogIn, Check, Scissors, Sparkles, Gift } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { dateTimeToISO } from '../../utils/formatters';
+import { getDayBoundsISO, dateTimeToISO } from '../../utils/formatters';
 import AdicionarCalendario from '../../components/shared/AdicionarCalendario';
 import { notificarNovoAgendamento } from '../../services/agendamentoNotificacaoService';
 import { salvarCadastroPendente } from '../../services/ghostClienteService';
@@ -32,6 +32,8 @@ export default function AgendamentoCliente({ onOpenLogin }) {
   const [carregandoHorarios, setCarregandoHorarios] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const [carregandoContexto, setCarregandoContexto] = useState(true);
+
   const [nomeGuest, setNomeGuest] = useState('');
   const [whatsappGuest, setWhatsappGuest] = useState('');
   const [emailGuest, setEmailGuest] = useState('');
@@ -54,12 +56,39 @@ export default function AgendamentoCliente({ onOpenLogin }) {
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); 
 
+  const [carregandoContexto, setCarregandoContexto] = useState(true);
+
   // Inicia carregando o contexto da barbearia pela URL
   useEffect(() => {
     if (slug) {
       carregarContextoBarbearia();
     }
   }, [slug]);
+
+  const carregarContextoBarbearia = async () => {
+    setCarregandoContexto(true);
+    try {
+      const { data, error } = await supabase
+        .from('barbearias')
+        .select('*')
+        .eq('slug', slug)
+        .single();
+      
+      if (error) throw error;
+      
+      if (data && data.status === 'aprovada') {
+        setBarbeariaContext(data);
+        carregarServicos(data.id);
+      } else {
+        setBarbeariaContext(null); // Pendente ou inativa
+      }
+    } catch (err) {
+      console.error('Erro ao buscar contexto da barbearia:', err);
+      setBarbeariaContext(null);
+    } finally {
+      setCarregandoContexto(false);
+    }
+  };
 
   // Recupera rascunho apenas após a barbearia estar carregada
   useEffect(() => {
@@ -75,15 +104,25 @@ export default function AgendamentoCliente({ onOpenLogin }) {
     }
   }, [servicoSelecionado]);
 
-  // Busca os horários ao preencher os requisitos da Etapa 3
   useEffect(() => {
-    if (passo === 3 && data && barbeiroSelecionado) {
-      buscarDisponibilidade();
+    const controller = new AbortController();
+    if (passo === 3 && data && barbeiroSelecionado && servicoSelecionado) {
+      buscarDisponibilidade(controller.signal);
       setHorario(''); 
     }
-  }, [data, barbeiroSelecionado, passo]);
+    return () => controller.abort();
+  }, [data, barbeiroSelecionado, servicoSelecionado, passo]);
+
+  const [carregandoContexto, setCarregandoContexto] = useState(true);
+
+  useEffect(() => {
+    if (slug) {
+      carregarContextoBarbearia();
+    }
+  }, [slug]);
 
   const carregarContextoBarbearia = async () => {
+    setCarregandoContexto(true);
     try {
       const { data, error } = await supabase
         .from('barbearias')
@@ -93,12 +132,17 @@ export default function AgendamentoCliente({ onOpenLogin }) {
       
       if (error) throw error;
       
-      if (data) {
+      if (data && data.status === 'aprovada') {
         setBarbeariaContext(data);
-        carregarServicos(data.id); // Carrega os serviços DESTA barbearia
+        carregarServicos(data.id);
+      } else {
+        setBarbeariaContext(null); // Pendente ou inativa
       }
     } catch (err) {
       console.error('Erro ao buscar contexto da barbearia:', err);
+      setBarbeariaContext(null);
+    } finally {
+      setCarregandoContexto(false);
     }
   };
 
@@ -117,17 +161,22 @@ export default function AgendamentoCliente({ onOpenLogin }) {
   };
 
   const recuperarRascunho = () => {
-    const rascunho = localStorage.getItem('agendamento_pendente');
-    if (rascunho) {
-      const dados = JSON.parse(rascunho);
-      // Evita carregar rascunho de outra barbearia
-      if (dados.servico.barbearia_id === barbeariaContext.id) {
-        setServicoSelecionado(dados.servico);
-        setBarbeiroSelecionado(dados.barbeiro);
-        setData(dados.data);
-        setHorario(dados.horario);
-        setPasso(3);
+    try {
+      const rascunho = localStorage.getItem('agendamento_pendente');
+      if (rascunho) {
+        const dados = JSON.parse(rascunho);
+        // Evita carregar rascunho de outra barbearia
+        if (dados.servico.barbearia_id === barbeariaContext?.id) {
+          setServicoSelecionado(dados.servico);
+          setBarbeiroSelecionado(dados.barbeiro);
+          setData(dados.data);
+          setHorario(dados.horario);
+          setPasso(3);
+        }
       }
+    } catch (err) {
+      console.error('Erro ao recuperar rascunho:', err);
+      localStorage.removeItem('agendamento_pendente');
     }
   };
 
@@ -162,24 +211,34 @@ export default function AgendamentoCliente({ onOpenLogin }) {
     }
   };
 
-  const buscarDisponibilidade = async () => {
+  const buscarDisponibilidade = async (signal) => {
     setCarregandoHorarios(true);
     try {
       const { data: config } = await supabase.from('barbearias').select('hora_abertura, hora_fechamento, dias_funcionamento').eq('id', servicoSelecionado.barbearia_id).single();
+      if (signal?.aborted) return;
       const { data: excecoes } = await supabase.from('excecoes_agenda').select('*').eq('barbeiro_id', barbeiroSelecionado.id).eq('data', data);
+      if (signal?.aborted) return;
       
-      const dataInicio = new Date(`${data}T00:00:00`).toISOString();
-      const dataFim = new Date(`${data}T23:59:59`).toISOString();
-      const { data: agendamentosDia } = await supabase.from('agendamentos').select('data_hora, servicos(duracao_minutos)').eq('barbeiro_id', barbeiroSelecionado.id).not('status_atendimento', 'eq', 'cancelado').not('status_atendimento', 'eq', 'ausente').gte('data_hora', dataInicio).lte('data_hora', dataFim);
+      const bounds = getDayBoundsISO(data);
+      const { data: agendamentosDia } = await supabase.from('agendamentos').select('data_hora, servicos(duracao_minutos)').eq('barbeiro_id', barbeiroSelecionado.id).not('status_atendimento', 'eq', 'cancelado').not('status_atendimento', 'eq', 'ausente').gte('data_hora', bounds.inicio).lte('data_hora', bounds.fim);
+      if (signal?.aborted) return;
 
       const horarios = gerarHorarios(config, excecoes || [], agendamentosDia || [], data);
       setHorariosDisponiveis(horarios);
     } catch (err) {
       console.error(err);
     } finally {
-      setCarregandoHorarios(false);
+      if (!signal?.aborted) setCarregandoHorarios(false);
     }
   };
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (passo === 3 && data && barbeiroSelecionado && servicoSelecionado) {
+      buscarDisponibilidade(controller.signal);
+    }
+    return () => controller.abort();
+  }, [data, barbeiroSelecionado, servicoSelecionado, passo]);
 
   const gerarHorarios = (config, excecoes, agendamentosDia, dataEscolhida) => {
     if (!config) return [];
@@ -331,10 +390,26 @@ export default function AgendamentoCliente({ onOpenLogin }) {
 
   const progresso = ((passo - 1) / 3) * 100;
 
-  if (!barbeariaContext) {
+  if (carregandoContexto) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
-        <div className="animate-spin h-8 w-8 border-4 border-brand border-t-transparent rounded-full"></div>
+        <div className="animate-spin h-8 w-8 border-4 border-brand border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  if (!barbeariaContext) {
+    return (
+      <div className="flex flex-col h-screen items-center justify-center bg-background p-4 text-center">
+        <AlertTriangle size={48} className="text-text-muted opacity-50 mb-4" />
+        <h1 className="text-xl font-black text-text-base mb-2">Barbearia não encontrada</h1>
+        <p className="text-sm text-text-muted mb-6">A página que você tentou acessar não existe ou foi desativada.</p>
+        <button
+          onClick={() => navigate('/')}
+          className="bg-brand text-white px-6 py-3 rounded-xl font-bold hover:brightness-110"
+        >
+          Voltar ao início
+        </button>
       </div>
     );
   }
@@ -407,16 +482,20 @@ export default function AgendamentoCliente({ onOpenLogin }) {
                     <button 
                       key={servico.id}
                       onClick={() => { setServicoSelecionado(servico); setPasso(2); }}
-                      className="w-full bg-surface p-5 rounded-3xl border border-border-line shadow-sm hover:border-brand/60 hover:shadow-md transition-all text-left flex items-center group cursor-pointer"
+                      className="w-full bg-surface p-4 sm:p-5 rounded-3xl border border-border-line shadow-sm hover:border-brand/60 hover:shadow-md transition-all text-left flex items-center group cursor-pointer gap-4"
                     >
-                      <div className="bg-background border border-border-line h-12 w-12 rounded-2xl flex items-center justify-center mr-4 text-text-muted group-hover:text-brand transition-colors">
-                        <Scissors size={22} />
+                      <div className="h-16 w-16 sm:h-[72px] sm:w-[72px] shrink-0 rounded-2xl overflow-hidden border border-border-line bg-background flex items-center justify-center text-text-muted group-hover:border-brand/40 transition-colors">
+                        {servico.imagem_url ? (
+                          <img src={servico.imagem_url} alt={servico.nome_servico} className="h-full w-full object-cover" />
+                        ) : (
+                          <Scissors size={24} className="group-hover:text-brand transition-colors" />
+                        )}
                       </div>
-                      <div className="flex-1">
-                        <p className="font-bold text-text-base text-lg">{servico.nome_servico}</p>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-text-base text-lg truncate">{servico.nome_servico}</p>
                         <p className="text-xs text-text-muted mt-0.5 flex items-center gap-1 font-medium"><Clock size={12}/> {servico.duracao_minutos} min</p>
                       </div>
-                      <div className="text-right flex items-center gap-3">
+                      <div className="text-right flex items-center gap-3 shrink-0">
                         <p className="font-black text-text-base text-lg">R$ {Number(servico.preco).toFixed(2)}</p>
                         <ChevronRight size={20} className="text-border-line group-hover:text-brand transition-colors transform group-hover:translate-x-1" />
                       </div>

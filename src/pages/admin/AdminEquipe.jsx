@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
+import { useOutletContext } from 'react-router-dom';
 import { useModal } from '../../context/ModalContext';
 import { Users, UserPlus, Search, Shield, Trash2, Phone, Check, Mail, AlertCircle } from 'lucide-react';
 import { useTenantPlan } from '../../context/PlanContext';
@@ -10,6 +11,7 @@ const soDigitos = (v) => (v || '').replace(/\D/g, '');
 
 export default function AdminEquipe() {
   const { profile } = useAuth();
+  const { adminBarbeariaId } = useOutletContext();
   const { showAlert, showConfirm } = useModal();
   const plan = useTenantPlan();
 
@@ -24,8 +26,8 @@ export default function AdminEquipe() {
   const [statusBusca, setStatusBusca] = useState('');
 
   useEffect(() => {
-    if (profile?.barbearia_id) buscarEquipe();
-  }, [profile]);
+    if (adminBarbeariaId) buscarEquipe();
+  }, [adminBarbeariaId]);
 
   const buscarEquipe = async () => {
     if (equipe.length === 0) setLoading(true);
@@ -33,7 +35,7 @@ export default function AdminEquipe() {
       const { data, error } = await supabase
         .from('usuarios')
         .select('*')
-        .eq('barbearia_id', profile.barbearia_id)
+        .eq('barbearia_id', adminBarbeariaId)
         .in('role', ['admin', 'gerente', 'funcionario'])
         .order('nome');
       if (error) throw error;
@@ -86,20 +88,20 @@ export default function AdminEquipe() {
         data.find((u) => u.cpf === termo || soDigitos(u.cpf) === digitos) ||
         data[0];
 
-      if (candidato.barbearia_id === profile.barbearia_id && candidato.role !== 'cliente') {
+      if (candidato.barbearia_id === adminBarbeariaId && candidato.role !== 'cliente') {
         setStatusBusca(`${candidato.nome} já faz parte da sua equipe (${candidato.role}). Veja na aba Membros.`);
         setUsuarioEncontrado(null);
         return;
       }
 
-      if (candidato.barbearia_id && candidato.barbearia_id !== profile.barbearia_id) {
+      if (candidato.barbearia_id && candidato.barbearia_id !== adminBarbeariaId) {
         setStatusBusca('Este usuário já está vinculado a outra barbearia e não pode ser adicionado.');
         return;
       }
 
       setUsuarioEncontrado(candidato);
       setStatusBusca(
-        candidato.barbearia_id === profile.barbearia_id
+        candidato.barbearia_id === adminBarbeariaId
           ? 'Cliente da sua barbearia — pronto para promover à equipe.'
           : 'Usuário encontrado — pode ser adicionado à equipe.'
       );
@@ -127,7 +129,7 @@ export default function AdminEquipe() {
         .from('usuarios')
         .update({
           role: roleSelecionada,
-          barbearia_id: profile.barbearia_id,
+          barbearia_id: adminBarbeariaId,
           exibe_na_agenda: true,
           ativo: true,
         })

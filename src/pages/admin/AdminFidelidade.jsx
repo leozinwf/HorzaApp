@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 
 import { useAuth } from '../../context/AuthContext';
+import { useOutletContext } from 'react-router-dom';
+import { useModal } from '../../context/ModalContext';
 
 import { supabase } from '../../services/supabaseClient';
 
@@ -57,6 +59,8 @@ const salvarPacotesLocal = (barbeariaId, pacotes) => {
 export default function AdminFidelidade() {
 
   const { profile } = useAuth();
+  const { adminBarbeariaId } = useOutletContext();
+  const { showConfirm } = useModal();
 
   const [loading, setLoading] = useState(true);
 
@@ -86,11 +90,11 @@ export default function AdminFidelidade() {
 
     try {
 
-      const { data } = await supabase.from('recompensas_fidelidade').select('*').eq('barbearia_id', profile.barbearia_id).order('pontos_necessarios', { ascending: true });
+      const { data } = await supabase.from('recompensas_fidelidade').select('*').eq('barbearia_id', adminBarbeariaId).order('pontos_necessarios', { ascending: true });
 
       if (data) setRecompensas(data);
 
-      setPacotes(carregarPacotesLocal(profile.barbearia_id));
+      setPacotes(carregarPacotesLocal(adminBarbeariaId));
 
     } catch (err) {
 
@@ -118,7 +122,7 @@ export default function AdminFidelidade() {
 
       const { data, error } = await supabase.from('recompensas_fidelidade').insert([{
 
-        barbearia_id: profile.barbearia_id,
+        barbearia_id: adminBarbeariaId,
 
         titulo: novaRecompensa.titulo,
 
@@ -140,7 +144,7 @@ export default function AdminFidelidade() {
 
       await auditLogService.registrar({
 
-        barbeariaId: profile.barbearia_id,
+        barbeariaId: adminBarbeariaId,
 
         usuarioId: profile.id,
 
@@ -206,7 +210,7 @@ export default function AdminFidelidade() {
 
     setPacotes(lista);
 
-    salvarPacotesLocal(profile.barbearia_id, lista);
+    salvarPacotesLocal(adminBarbeariaId, lista);
 
     setNovoPacote({ titulo: '', quantidade: '', preco: '', validade_dias: '30' });
 
@@ -214,7 +218,7 @@ export default function AdminFidelidade() {
 
     auditLogService.registrar({
 
-      barbeariaId: profile.barbearia_id,
+      barbeariaId: adminBarbeariaId,
 
       usuarioId: profile.id,
 
@@ -237,67 +241,41 @@ export default function AdminFidelidade() {
 
 
   const deletarPacote = (id) => {
+    showConfirm('Remover pacote', 'Remover este pacote?', () => {
+      const pacote = pacotes.find((p) => p.id === id);
+      const lista = pacotes.filter((p) => p.id !== id);
+      setPacotes(lista);
+      salvarPacotesLocal(adminBarbeariaId, lista);
 
-    if (!window.confirm('Remover este pacote?')) return;
-
-    const pacote = pacotes.find((p) => p.id === id);
-
-    const lista = pacotes.filter((p) => p.id !== id);
-
-    setPacotes(lista);
-
-    salvarPacotesLocal(profile.barbearia_id, lista);
-
-    auditLogService.registrar({
-
-      barbeariaId: profile.barbearia_id,
-
-      usuarioId: profile.id,
-
-      usuarioNome: profile.nome,
-
-      modulo: 'fidelidade',
-
-      acao: 'excluir',
-
-      descricao: `Pacote "${pacote?.titulo}" removido`,
-
+      auditLogService.registrar({
+        barbeariaId: adminBarbeariaId,
+        usuarioId: profile.id,
+        usuarioNome: profile.nome,
+        modulo: 'fidelidade',
+        acao: 'excluir',
+        descricao: `Pacote "${pacote?.titulo}" removido`,
+      });
     });
-
   };
 
 
 
   const deletarRecompensa = async (id) => {
-
-    if (!window.confirm('Tem certeza que deseja remover este prêmio?')) return;
-
-    const rec = recompensas.find((r) => r.id === id);
-
-    try {
-
-      await supabase.from('recompensas_fidelidade').delete().eq('id', id);
-
-      setRecompensas(recompensas.filter(r => r.id !== id));
-
-      await auditLogService.registrar({
-
-        barbeariaId: profile.barbearia_id,
-
-        usuarioId: profile.id,
-
-        usuarioNome: profile.nome,
-
-        modulo: 'fidelidade',
-
-        acao: 'excluir',
-
-        descricao: `Prêmio "${rec?.titulo}" removido`,
-
-      });
-
-    } catch (err) {}
-
+    showConfirm('Remover Prêmio', 'Tem certeza que deseja remover este prêmio?', async () => {
+      const rec = recompensas.find((r) => r.id === id);
+      try {
+        await supabase.from('recompensas_fidelidade').delete().eq('id', id);
+        setRecompensas(recompensas.filter(r => r.id !== id));
+        await auditLogService.registrar({
+          barbeariaId: adminBarbeariaId,
+          usuarioId: profile.id,
+          usuarioNome: profile.nome,
+          modulo: 'fidelidade',
+          acao: 'excluir',
+          descricao: `Prêmio "${rec?.titulo}" removido`,
+        });
+      } catch (err) {}
+    });
   };
 
 

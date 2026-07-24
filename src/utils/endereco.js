@@ -31,8 +31,10 @@ const geoCache = new Map();
 
 export async function obterCoordenadasBarbearia(barbearia) {
   if (!barbearia) return null;
-  if (barbearia.latitude && barbearia.longitude) {
-    return { lat: Number(barbearia.latitude), lng: Number(barbearia.longitude) };
+  const lat = Number(barbearia.latitude ?? barbearia.lat);
+  const lng = Number(barbearia.longitude ?? barbearia.lng);
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    return { lat, lng };
   }
 
   const endereco = montarEndereco(barbearia);
@@ -61,8 +63,8 @@ export async function resolverCoordenadasLista(barbearias) {
   const comCoords = await Promise.all(
     barbearias.map(async (b) => {
       const coords = await obterCoordenadasBarbearia(b);
-      return coords ? { ...b, lat: coords.lat, lng: coords.lng } : null;
+      return coords ? { ...b, lat: coords.lat, lng: coords.lng } : { ...b };
     })
   );
-  return comCoords.filter(Boolean);
+  return comCoords;
 }

@@ -29,10 +29,10 @@ export const getRoleLabel = (role) => ROLE_LABELS[role] || role || '—';
 export const isDono = (profile, user = null) =>
   profile?.role === 'admin' || isSuperAdmin(user, profile);
 
-export const SUPER_ADMIN_EMAIL = 'admin@barbearia.com';
+export const SUPER_ADMIN_EMAIL = '';
 
 export const isSuperAdmin = (user, profile) =>
-  profile?.role === 'super_admin' || user?.email === SUPER_ADMIN_EMAIL;
+  profile?.role === 'super_admin';
 
 /** Acesso ao painel admin de uma barbearia (/:slug/admin) */
 export const canAccessBarbeariaAdmin = (user, profile) =>

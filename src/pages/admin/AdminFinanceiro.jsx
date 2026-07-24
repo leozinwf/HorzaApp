@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useOutletContext } from 'react-router-dom';
 import { financeiroService } from '../../services/financeiroService';
 import { useModal } from '../../context/ModalContext';
 import { 
@@ -44,6 +45,7 @@ const converterMoedaParaFloat = (valorString) => {
 
 export default function AdminFinanceiro() {
   const { profile } = useAuth();
+  const { adminBarbeariaId } = useOutletContext();
   const { showConfirm, showAlert } = useModal();
 
   const [subAba, setSubAba] = useState('extrato');
@@ -83,10 +85,10 @@ export default function AdminFinanceiro() {
   ];
 
   useEffect(() => {
-    if (profile?.barbearia_id) {
+    if (adminBarbeariaId) {
       carregarPainelFinanceiro();
     }
-  }, [profile, mesFiltro, anoFiltro, subAba]);
+  }, [adminBarbeariaId, mesFiltro, anoFiltro, subAba]);
 
   const carregarPainelFinanceiro = async () => {
     setLoading(true);
@@ -95,9 +97,9 @@ export default function AdminFinanceiro() {
       const dataFim = new Date(anoFiltro, mesFiltro + 1, 0, 23, 59, 59, 999).toISOString();
 
       const [transData, eqData, catData] = await Promise.all([
-        financeiroService.obterTransacoes(profile.barbearia_id, dataInicio, dataFim),
-        financeiroService.obterEquipe(profile.barbearia_id),
-        financeiroService.obterCategorias(profile.barbearia_id)
+        financeiroService.obterTransacoes(adminBarbeariaId, dataInicio, dataFim),
+        financeiroService.obterEquipe(adminBarbeariaId),
+        financeiroService.obterCategorias(adminBarbeariaId)
       ]);
 
       setTransacoes(transData);
@@ -133,7 +135,7 @@ export default function AdminFinanceiro() {
     const valorFloat = converterMoedaParaFloat(valor);
     const basePayload = {
       tipo, categoria, status, valor: valorFloat, descricao, recorrente,
-      barbearia_id: profile.barbearia_id,
+      barbearia_id: adminBarbeariaId,
       funcionario_id: (categoria === 'vale_funcionario' || categoria === 'pagamento_equipe') ? funcionarioId : null,
       tipo_pagamento_funcionario: (categoria === 'vale_funcionario' || categoria === 'pagamento_equipe') ? tipoPagamentoFuncionario : null
     };
@@ -197,9 +199,9 @@ export default function AdminFinanceiro() {
       if (opcao === 'unica') {
         await financeiroService.deletarTransacaoUnica(t.id);
       } else if (opcao === 'proximas') {
-        await financeiroService.deletarTransacoesFuturas(t.grupo_recorrencia, t.data_transacao, profile.barbearia_id);
+        await financeiroService.deletarTransacoesFuturas(t.grupo_recorrencia, t.data_transacao, adminBarbeariaId);
       } else if (opcao === 'todas') {
-        await financeiroService.deletarTransacoesGrupo(t.grupo_recorrencia, profile.barbearia_id);
+        await financeiroService.deletarTransacoesGrupo(t.grupo_recorrencia, adminBarbeariaId);
       }
       setDeleteRecurringModal({ isOpen: false, transacao: null });
       carregarPainelFinanceiro();
@@ -247,10 +249,10 @@ export default function AdminFinanceiro() {
           editingCategoria.id,
           { nome: novaCatNome, tipo: tipoStr },
           editingCategoria.nome,
-          profile.barbearia_id
+          adminBarbeariaId
         );
         await auditLogService.registrar({
-          barbeariaId: profile.barbearia_id,
+          barbeariaId: adminBarbeariaId,
           usuarioId: profile.id,
           usuarioNome: profile.nome,
           modulo: 'financeiro',
@@ -260,12 +262,12 @@ export default function AdminFinanceiro() {
         showAlert('Sucesso', 'Categoria atualizada!', 'success');
       } else {
         await financeiroService.adicionarCategoria({
-          barbearia_id: profile.barbearia_id,
+          barbearia_id: adminBarbeariaId,
           nome: novaCatNome,
           tipo: tipoStr
         });
         await auditLogService.registrar({
-          barbeariaId: profile.barbearia_id,
+          barbeariaId: adminBarbeariaId,
           usuarioId: profile.id,
           usuarioNome: profile.nome,
           modulo: 'financeiro',
@@ -303,7 +305,7 @@ export default function AdminFinanceiro() {
   };
 
   const handleVerificarDelecaoCategoria = async (cat) => {
-    const emUso = await financeiroService.verificarUsoCategoria(cat.nome, profile.barbearia_id);
+    const emUso = await financeiroService.verificarUsoCategoria(cat.nome, adminBarbeariaId);
 
     if (emUso) {
       setMigrationModal({ isOpen: true, oldCat: cat, newCatName: '' });
@@ -325,7 +327,7 @@ export default function AdminFinanceiro() {
         migrationModal.oldCat.nome, 
         migrationModal.newCatName, 
         migrationModal.oldCat.id, 
-        profile.barbearia_id
+        adminBarbeariaId
       );
 
       showAlert('Sucesso', 'Lançamentos transferidos e categoria excluída!', 'success');

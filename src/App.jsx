@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ModalProvider } from './context/ModalContext';
 import { supabase } from './services/supabaseClient';
 
-// --- Imports de Layout e Modais ---
+// --- Imports de Layout e Modais (Mantidos síncronos por serem críticos/rápidos) ---
 import MenuNavegacao from './components/layout/MenuNavegacao';
 import AdminLayout from './components/layout/AdminLayout';
 import BarberLayout from './components/layout/BarberLayout';
@@ -13,47 +13,45 @@ import LoginModal from './components/modals/LoginModal';
 import SuperAdminRoute from './components/layout/SuperAdminRoute';
 import TenantProtectedRoute from './components/layout/TenantProtectedRoute';
 
-// --- Imports das Páginas do Cliente/Marketplace ---
-import HomeMarketplace from './pages/client/HomeMarketplace';
-import HomeCliente from './pages/client/HomeCliente';
-import AgendamentoCliente from './pages/client/AgendamentoCliente';
-import AreaCliente from './pages/client/AreaCliente';
+// --- Lazy Imports das Páginas (Performance / Code Splitting) ---
+const HomeMarketplace = lazy(() => import('./pages/client/HomeMarketplace'));
+const HomeCliente = lazy(() => import('./pages/client/HomeCliente'));
+const AgendamentoCliente = lazy(() => import('./pages/client/AgendamentoCliente'));
+const AreaCliente = lazy(() => import('./pages/client/AreaCliente'));
 
-// --- Imports das Páginas do Barbeiro ---
-import AgendaBarbeiro from './pages/barber/AgendaBarbeiro';
-import BarberPerfil from './pages/barber/BarberPerfil';
-import CadastroBarbearia from './pages/barber/CadastroBarbearia';
+const AgendaBarbeiro = lazy(() => import('./pages/barber/AgendaBarbeiro'));
+const BarberPerfil = lazy(() => import('./pages/barber/BarberPerfil'));
+const CadastroBarbearia = lazy(() => import('./pages/barber/CadastroBarbearia'));
 
-// --- Imports das Páginas de Admin ---
-import DashboardMaster from './pages/admin/DashboardMaster';
-import DashboardAdmin from './pages/admin/DashboardAdmin';
-import AdminEquipe from './pages/admin/AdminEquipe';
-import AdminEmpresa from './pages/admin/AdminEmpresa';
-import AdminServicos from './pages/admin/AdminServicos';
-import AdminEstoque from './pages/admin/AdminEstoque';
-import AdminFinanceiro from './pages/admin/AdminFinanceiro';
-import AdminAgendaEquipe from './pages/admin/AdminAgendaEquipe';
-import AdminPermissoes from './pages/admin/AdminPermissoes';
-import AdminPagamentos from './pages/admin/AdminPagamentos';
-import AdminFidelidade from './pages/admin/AdminFidelidade';
-import AdminUsuarios from './pages/admin/AdminUsuarios';
-import AdminIntegracoes from './pages/admin/AdminIntegracoes';
-import AdminComunicados from './pages/admin/AdminComunicados';
-import AdminMeuPlano from './pages/admin/AdminMeuPlano';
-import AdminUnidades from './pages/admin/plus/AdminUnidades';
-import AdminComissoes from './pages/admin/plus/AdminComissoes';
-import AdminHeatmap from './pages/admin/plus/AdminHeatmap';
-import AdminInteligencia from './pages/admin/plus/AdminInteligencia';
-import AdminBackup from './pages/admin/plus/AdminBackup';
-import AdminDominio from './pages/admin/plus/AdminDominio';
-import StripeCallback from './pages/admin/StripeCallback';
+const DashboardMaster = lazy(() => import('./pages/admin/DashboardMaster'));
+const DashboardAdmin = lazy(() => import('./pages/admin/DashboardAdmin'));
+const AdminEquipe = lazy(() => import('./pages/admin/AdminEquipe'));
+const AdminEmpresa = lazy(() => import('./pages/admin/AdminEmpresa'));
+const AdminServicos = lazy(() => import('./pages/admin/AdminServicos'));
+const AdminEstoque = lazy(() => import('./pages/admin/AdminEstoque'));
+const AdminFinanceiro = lazy(() => import('./pages/admin/AdminFinanceiro'));
+const AdminAgendaEquipe = lazy(() => import('./pages/admin/AdminAgendaEquipe'));
+const AdminPermissoes = lazy(() => import('./pages/admin/AdminPermissoes'));
+const AdminPagamentos = lazy(() => import('./pages/admin/AdminPagamentos'));
+const AdminFidelidade = lazy(() => import('./pages/admin/AdminFidelidade'));
+const AdminUsuarios = lazy(() => import('./pages/admin/AdminUsuarios'));
+const AdminIntegracoes = lazy(() => import('./pages/admin/AdminIntegracoes'));
+const AdminComunicados = lazy(() => import('./pages/admin/AdminComunicados'));
+const AdminMeuPlano = lazy(() => import('./pages/admin/AdminMeuPlano'));
+const AdminUnidades = lazy(() => import('./pages/admin/plus/AdminUnidades'));
+const AdminComissoes = lazy(() => import('./pages/admin/plus/AdminComissoes'));
+const AdminHeatmap = lazy(() => import('./pages/admin/plus/AdminHeatmap'));
+const AdminInteligencia = lazy(() => import('./pages/admin/plus/AdminInteligencia'));
+const AdminBackup = lazy(() => import('./pages/admin/plus/AdminBackup'));
+const AdminDominio = lazy(() => import('./pages/admin/plus/AdminDominio'));
+const StripeCallback = lazy(() => import('./pages/admin/StripeCallback'));
 
-import PaginaSuporte from './pages/institutional/PaginaSuporte';
-import PaginaContato from './pages/institutional/PaginaContato';
-import PaginaTermos from './pages/institutional/PaginaTermos';
-import PaginaConsentimento from './pages/institutional/PaginaConsentimento';
-import PaginaPrivacidade from './pages/institutional/PaginaPrivacidade';
-import PaginaQuemSomos from './pages/institutional/PaginaQuemSomos';
+const PaginaSuporte = lazy(() => import('./pages/institutional/PaginaSuporte'));
+const PaginaContato = lazy(() => import('./pages/institutional/PaginaContato'));
+const PaginaTermos = lazy(() => import('./pages/institutional/PaginaTermos'));
+const PaginaConsentimento = lazy(() => import('./pages/institutional/PaginaConsentimento'));
+const PaginaPrivacidade = lazy(() => import('./pages/institutional/PaginaPrivacidade'));
+const PaginaQuemSomos = lazy(() => import('./pages/institutional/PaginaQuemSomos'));
 
 // Componente para proteger rotas normais
 function ProtectedRoute({ children, allowedRoles }) {
@@ -74,7 +72,7 @@ function AppContent() {
   useEffect(() => {
     const hash = window.location.hash;
     if (hash.includes('error_code=otp_expired')) {
-      alert('O link de recuperação expirou. Por favor, solicite um novo.');
+      toast.error('O link de recuperação expirou. Por favor, solicite um novo.');
       window.history.replaceState(null, '', window.location.pathname);
     }
 
@@ -98,7 +96,12 @@ function AppContent() {
     <>
       <MenuNavegacao onOpenLogin={openLogin} />
 
-      <main className="pb-safe-nav md:pb-0 md:pt-[var(--horza-header-h)] min-h-screen bg-background">
+      <main className="pb-safe-nav md:pb-0 md:pt-[var(--horza-header-h)] min-h-screen bg-background flex flex-col">
+        <Suspense fallback={
+          <div className="flex-1 flex items-center justify-center min-h-[50vh]">
+            <div className="h-8 w-8 border-4 border-brand border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        }>
           <Routes>
             <Route path="/" element={<HomeMarketplace />} />
             <Route path="/cadastro-barbearia" element={<CadastroBarbearia />} />
@@ -148,6 +151,7 @@ function AppContent() {
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+        </Suspense>
       </main>
 
       <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} initialMode={loginModalMode} />
